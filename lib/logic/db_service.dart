@@ -1,6 +1,7 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart'; // Toto definuje debugPrint
 
 class DbService {
   static Database? _db;
@@ -75,5 +76,23 @@ class DbService {
       }
       onProgress(1.0); // Hotovo
     });
+  }
+
+  Future<int> getRowCount() async {
+    try {
+      final db = await database;
+      // rawQuery spustí čistý SQL příkaz a vrátí výsledek jako tabulku (List)
+      final List<Map<String, Object?>> x = await db.rawQuery('SELECT COUNT(*) FROM zakaznici');
+      
+      // Výsledek vypadá jako [{'COUNT(*)': 15000}]
+      // My vytáhneme tu první hodnotu a převedeme ji na celé číslo (int)
+      if (x.isNotEmpty) {
+        return int.parse(x.first.values.first.toString());
+      }
+      return 0;
+    } catch (e) {
+      debugPrint("Chyba při počítání řádků: $e");
+      return 0; // Pokud se něco pokazí, vrátíme 0, aby aplikace nespadla
+    }
   }
 }
