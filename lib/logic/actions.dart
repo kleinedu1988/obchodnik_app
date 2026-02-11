@@ -1,26 +1,54 @@
-import 'package:flutter/material.dart'; // Importujeme nástroje pro práci s UI (např. barvy, zprávy)
+import 'dart:ui';
+import 'package:flutter/material.dart';
 
-// Funkce, která se spustí při kliknutí na menu
-// BuildContext 'context' je jako adresa - říká Flutteru, kde přesně v aplikaci se nacházíme
 void zpracujKliknuti(BuildContext context, String nazevPolozky) {
-  
-  // Vypíše název do debug konzole ve VS Code (neviditelné pro uživatele)
   print("Logika: Uživatel klikl na $nazevPolozky");
 
-  // ScaffoldMessenger najde nejbližší Scaffold (kostru okna) a zobrazí v něm zprávu
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      // Obsah zprávy - text s názvem položky
-      content: Text("Aktivována sekce: $nazevPolozky"),
-      
-      // Jak dlouho má bublina strašit na obrazovce
-      duration: const Duration(milliseconds: 800),
-      
-      // Udělá bublinu kulatou a "plovoucí" (vypadá to moderněji)
-      behavior: SnackBarBehavior.floating, 
-      
-      // Zaoblení rohů samotné bubliny
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), 
+  final snackBar = SnackBar(
+    duration: const Duration(milliseconds: 900),
+    behavior: SnackBarBehavior.floating,
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    margin: const EdgeInsets.only(
+      bottom: 20,
+      left: 20,
+      right: 20,
+    ),
+    content: ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF151515).withOpacity(0.82),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                size: 18,
+                color: Colors.blueAccent.withOpacity(0.9),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  "Aktivována sekce: $nazevPolozky",
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.85),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     ),
   );
+
+  ScaffoldMessenger.of(context).showSnackBar(snackBar);
 }

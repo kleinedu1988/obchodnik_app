@@ -1,61 +1,81 @@
-import 'package:flutter/material.dart'; // Základní UI knihovna Flutteru
-// Poznámka: Importy níže jsou v tomto ukázkovém kódu zakomentovány, 
-// aby byl kód spustitelný i bez externích souborů.
+import 'dart:ui';
+import 'package:flutter/material.dart';
+
 import 'package:mrb_obchodnik/logic/actions.dart';
 import 'views/settings_view.dart';
 
 void main() {
-  runApp(const MyApp()); // Spuštění celé aplikace
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key}); // Základní obal aplikace (kořenový widget)
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false, // Schováme červený "debug" proužek v rohu
-      theme: ThemeData.dark().copyWith( // Nastavení tmavého režimu
-        scaffoldBackgroundColor: const Color(0xFF0F0F0F), // Velmi tmavé pozadí hlavní plochy
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF0F0F0F),
       ),
-      home: const MainScreen(), // Nastavení výchozí obrazovky
+      home: const MainScreen(),
     );
   }
 }
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key}); // Hlavní obrazovka se stavem
+  const MainScreen({super.key});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0; // Proměnná držící číslo aktuálně otevřené stránky
+  int _selectedIndex = 0;
+
+  static const double _sidebarWidth = 250;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Row(
         children: [
-          // --- LEVÝ PANEL (SIDEBAR) ---
-          Container(
-            width: 250, // Pevně daná šířka sidebaru
-            color: const Color(0xFF161616), // Tmavší barva pozadí pro panel
-            child: Column(
-              children: [
-                const SizedBox(height: 50), // Mezera nahoře
-                _buildMenuItem(0, Icons.dashboard_rounded, "Nástěnka"),
-                _buildMenuItem(1, Icons.file_download_rounded, "Import dat"),
-                _buildMenuItem(2, Icons.analytics_rounded, "Analýza"),
-                const Spacer(), // Vyplní prostor a odtlačí nastavení dolů
-                _buildMenuItem(3, Icons.settings_rounded, "Nastavení"),
-                const SizedBox(height: 20), // Spodní odsazení
-              ],
+          // ===============================
+          //  GLASS SIDEBAR (NO RADIUS)
+          // ===============================
+          BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              width: _sidebarWidth,
+              decoration: BoxDecoration(
+                color: const Color(0xFF151515).withOpacity(0.65),
+                border: Border(
+                  right: BorderSide(
+                    color: Colors.white.withOpacity(0.08),
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 50),
+
+                  _menuItem(0, Icons.dashboard_rounded, "Nástěnka"),
+                  _menuItem(1, Icons.file_download_rounded, "Import dat"),
+                  _menuItem(2, Icons.analytics_rounded, "Analýza"),
+
+                  const Spacer(),
+
+                  _menuItem(3, Icons.settings_rounded, "Nastavení"),
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
           ),
-          
-          // --- PRAVÝ KONTEJNER (DYNAMICKÝ OBSAH) ---
+
+          // ===============================
+          //  CONTENT
+          // ===============================
           Expanded(
             child: Container(
               padding: const EdgeInsets.all(40),
@@ -67,66 +87,74 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // IMPLEMENTOVANÁ FUNKCE: Vytváří tlačítko v menu se správným zvýrazněním (Hover)
-  Widget _buildMenuItem(int index, IconData icon, String title) {
-    bool isSelected = _selectedIndex == index; // Je toto tlačítko vybrané?
+  // ===============================
+  //  SIMPLE FLAT BLUE MENU ITEM
+  // ===============================
+  Widget _menuItem(int index, IconData icon, String title) {
+    final bool selected = _selectedIndex == index;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2), // Mezery kolem tlačítka
-      child: Material( // Material widget je NUTNÝ pro správné zobrazení Hover barvy
-        color: Colors.transparent, // Pozadí Materialu musí být průhledné
-        child: InkWell( // InkWell zajišťuje interaktivitu a vizuální odezvu
-          onTap: () {
-            setState(() => _selectedIndex = index); // Změna stavu okna
-            zpracujKliknuti(context, title); // Volání logiky
-          },
-          borderRadius: BorderRadius.circular(10), // Zakulacení rohů při najetí myší
-          hoverColor: Colors.white.withOpacity(0.05), // Jemné prosvětlení při najetí myši
-          splashColor: Colors.blueAccent.withOpacity(0.1), // Efekt při kliknutí
-          
-          child: Container( // Vnitřní vzhled tlačítka
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-            decoration: BoxDecoration(
-              // Pokud je vybráno, dostane modrý nádech, jinak zůstane průhledné
-              color: isSelected ? Colors.blueAccent.withOpacity(0.1) : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                // Ikona mění barvu podle výběru
-                Icon(
-                  icon, 
-                  color: isSelected ? Colors.blueAccent : Colors.grey, 
-                  size: 22
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: InkWell(
+        onTap: () {
+          setState(() => _selectedIndex = index);
+          zpracujKliknuti(context, title);
+        },
+        hoverColor: Colors.white.withOpacity(0.05),
+        splashColor: Colors.blueAccent.withOpacity(0.10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected
+                ? Colors.blueAccent.withOpacity(0.15)
+                : Colors.transparent,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: selected
+                    ? Colors.blueAccent
+                    : Colors.white.withOpacity(0.45),
+              ),
+              const SizedBox(width: 14),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: selected
+                      ? Colors.white.withOpacity(0.95)
+                      : Colors.white.withOpacity(0.60),
                 ),
-                const SizedBox(width: 15), // Mezera mezi ikonou a textem
-                // Text mění barvu a tučnost
-                Text(
-                  title, 
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : Colors.grey,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // Funkce, která vrací správný soubor (View) podle zvoleného menu
   Widget _getPageView(int index) {
     switch (index) {
       case 0:
-        return const Center(child: Text("Zde bude soubor: home_view.dart", style: TextStyle(color: Colors.grey)));
+        return const Center(
+          child: Text("Zde bude home_view.dart",
+              style: TextStyle(color: Colors.grey)),
+        );
       case 1:
-        return const Center(child: Text("Zde bude soubor: import_view.dart", style: TextStyle(color: Colors.grey)));
+        return const Center(
+          child: Text("Zde bude import_view.dart",
+              style: TextStyle(color: Colors.grey)),
+        );
       case 2:
-        return const Center(child: Text("Sekce Analýza", style: TextStyle(color: Colors.grey)));
+        return const Center(
+          child: Text("Sekce Analýza",
+              style: TextStyle(color: Colors.grey)),
+        );
       case 3:
-        return const SettingsView(); // Volání nastavení
+        return const SettingsView();
       default:
         return const Center(child: Text("Stránka nenalezena"));
     }
