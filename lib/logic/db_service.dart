@@ -82,6 +82,17 @@ class DbService {
   //  DIAGNOSTIKA (Pro DbStatusTab)
   // =============================================================
 
+  /// Získá souhrnné informace o databázi v jednom dotazu.
+  /// Vrací 'last_import' (ISO string) a 'count' (počet řádků).
+  Future<Map<String, dynamic>> getDatabaseInfo() async {
+    final db = await database;
+    // Získáme čas nejnovějšího záznamu a celkový počet řádků
+    final List<Map<String, dynamic>> res = await db.rawQuery(
+      'SELECT MAX(timestamp) as last_import, COUNT(*) as count FROM zakaznici'
+    );
+    return res.first;
+  }
+
   /// Získá poslední záznam pro informaci o čerstvosti dat
   Future<Map<String, dynamic>?> getLastEntry() async {
     final db = await database;

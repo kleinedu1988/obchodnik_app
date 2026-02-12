@@ -6,6 +6,14 @@ The format is based on Keep a Changelog
 and this project adheres to Semantic Versioning.
 
 ---
+## [0.3.1] - 2026-02-12
+
+### Přidáno
+- Do obecných nastavení přidána volba "Interval kontroly dat" (možnosti: týden, 14 dní, měsíc).
+
+### Změněno
+- Upravena logika `DbStatusTab`: pokud jsou data starší než nastavený interval, indikátor se změní na oranžovou (varování).
+
 ## [0.3.0] - 2026-02-12
 
 ### Přidáno

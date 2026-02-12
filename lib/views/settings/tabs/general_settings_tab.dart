@@ -21,6 +21,9 @@ class _GeneralSettingsTabState extends State<GeneralSettingsTab> {
   bool _autoSync = false;
   bool _compactMode = false;
   bool _autoBackup = true;
+  
+  // Nová proměnná pro interval
+  String _syncInterval = '1 měsíc';
 
   @override
   void initState() {
@@ -37,6 +40,8 @@ class _GeneralSettingsTabState extends State<GeneralSettingsTab> {
       _autoSync = prefs.getBool('auto_sync') ?? false;
       _compactMode = prefs.getBool('compact_mode') ?? false;
       _autoBackup = prefs.getBool('auto_backup') ?? true;
+      // Načtení intervalu
+      _syncInterval = prefs.getString('sync_interval') ?? '1 měsíc';
     });
   }
 
@@ -93,6 +98,27 @@ class _GeneralSettingsTabState extends State<GeneralSettingsTab> {
                   value: _autoSync,
                   onChanged: (v) => _saveBool('auto_sync', v, (val) => _autoSync = val),
                 ),
+                
+                // --- Nový Dropdown Element ---
+                _buildDropdownRow(
+                  icon: Icons.history_toggle_off_rounded,
+                  color: Colors.amberAccent,
+                  title: "Interval kontroly dat",
+                  subtitle: "Po této době bude databáze označena za neaktuální",
+                  value: _syncInterval,
+                  items: ['teď', '1 týden', '2 týdny', '1 měsíc'],
+                  onChanged: (String? newValue) async {
+                    if (newValue != null) {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setString('sync_interval', newValue);
+                      setState(() => _syncInterval = newValue);
+                    }
+                  },
+                ),
+                
+                // Manuální oddělovač, aby design ladil s ostatními řádky
+                Divider(height: 1, color: Colors.white.withOpacity(0.03)),
+
                 _buildToggleRow(
                   icon: Icons.cloud_done_rounded,
                   color: Colors.blueAccent,
@@ -237,6 +263,52 @@ class _GeneralSettingsTabState extends State<GeneralSettingsTab> {
         ),
         if (!isLast) Divider(height: 1, color: Colors.white.withOpacity(0.03)),
       ],
+    );
+  }
+
+  // --- NOVÁ FUNKCE PRO DROPDOWN ---
+  Widget _buildDropdownRow({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Row(
+        children: [
+          Icon(icon, color: color.withOpacity(0.4), size: 20),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 10)),
+              ],
+            ),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(canvasColor: const Color(0xFF1E1E1E)),
+            child: DropdownButton<String>(
+              value: value,
+              underline: const SizedBox(),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white24),
+              style: const TextStyle(color: Color(0xFF4077D1), fontSize: 12, fontWeight: FontWeight.bold),
+              onChanged: onChanged,
+              items: items.map<DropdownMenuItem<String>>((String val) {
+                return DropdownMenuItem<String>(
+                  value: val,
+                  child: Text(val),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

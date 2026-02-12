@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart'; // Pro formátování datumu
+import 'package:shared_preferences/shared_preferences.dart'; // Přidáno pro načítání intervalu
 import '../../../logic/db_service.dart';
 import '../../../logic/import_logic.dart';
 import '../settings_helpers.dart';
@@ -19,9 +20,10 @@ class _DbStatusTabState extends State<DbStatusTab> {
   static const Color _emerald = Color(0xFF10B981);
   static const Color _amber = Color(0xFFF59E0B);
   static const Color _red = Color(0xFFEF4444);
+  static const Color _orange = Colors.orangeAccent;
 
-  // Budeme si držet budoucí data v proměnné, aby FutureBuilder
-  // nespouštěl dotaz do DB při každém pohybu myši nebo animaci.
+  // Budeme si držet budoucí data v proměnné
+  // Index 0: LastEntry (Map), Index 1: RowCount (int), Index 2: SharedPreferences
   late Future<List<dynamic>> _dbData;
 
   @override
@@ -30,12 +32,13 @@ class _DbStatusTabState extends State<DbStatusTab> {
     _nactiData(); // Prvotní načtení při otevření tabu
   }
 
-  /// Metoda pro (znovu)načtení dat z databáze
+  /// Metoda pro (znovu)načtení dat z databáze a preferencí
   void _nactiData() {
     setState(() {
       _dbData = Future.wait([
         DbService().getLastEntry(),
         DbService().getRowCount(),
+        SharedPreferences.getInstance(),
       ]);
     });
   }
@@ -56,7 +59,7 @@ class _DbStatusTabState extends State<DbStatusTab> {
     return FutureBuilder<List<dynamic>>(
       future: _dbData,
       builder: (context, snapshot) {
-        // Diagnostika do konzole - teď už by se měla objevit jen při změně stavu
+        // Diagnostika do konzole
         if (snapshot.hasData) {
           debugPrint("STAV TABU: Záznamů=${snapshot.data![1]}, Poslední=${snapshot.data![0]?['timestamp']}");
         }
@@ -67,24 +70,59 @@ class _DbStatusTabState extends State<DbStatusTab> {
           );
         }
 
+        // 1. Získání dat z Future
         final lastEntry = snapshot.data?[0] as Map<String, dynamic>?;
         final rowCount = (snapshot.data?[1] as int?) ?? 0;
+        final prefs = snapshot.data?[2] as SharedPreferences;
+        
+        // 2. Načtení intervalu nastavení
+        final interval = prefs.getString('sync_interval') ?? '1 měsíc';
+        final lastImportIso = lastEntry?['timestamp'] as String?;
 
-        // LOGIKA TŘÍ STAVŮ (Semafor)
-        Color stavBarva = _red;
-        String stavText = "KRITICKÝ STAV";
-        String stavPodpis = "DATABÁZE JE PRÁZDNÁ, NUTNÝ IMPORT";
-        IconData stavIkona = Icons.error_outline_rounded;
+        // 3. Výpočet stáří dat (Logika z tvého zadání)
+        bool isOutdated = false;
+        if (lastImportIso != null) {
+          DateTime lastImport = DateTime.parse(lastImportIso);
+          DateTime now = DateTime.now();
+          Duration diff = now.difference(lastImport);
 
-        if (rowCount > 0 && rowCount < 100) {
+          switch (interval) {
+            case 'teď': isOutdated = diff.inSeconds > 10; break;
+            case '1 týden': isOutdated = diff.inDays > 7; break;
+            case '2 týdny': isOutdated = diff.inDays > 14; break;
+            case '1 měsíc': isOutdated = diff.inDays > 30; break;
+          }
+        }
+
+        // LOGIKA TŘÍ STAVŮ (Semafor) + ZASTARALÁ DATA
+        Color stavBarva;
+        String stavText;
+        String stavPodpis;
+        IconData stavIkona;
+
+        if (rowCount == 0) {
+          // 1. Priorita: Prázdná DB
+          stavBarva = _red;
+          stavText = "KRITICKÝ STAV";
+          stavPodpis = "DATABÁZE JE PRÁZDNÁ, NUTNÝ IMPORT";
+          stavIkona = Icons.error_outline_rounded;
+        } else if (isOutdated) {
+          // 2. Priorita: Zastaralá data (podle nastavení)
+          stavBarva = _orange;
+          stavText = "DATA JSOU ZASTARALÁ";
+          stavPodpis = "INTERVAL $interval BYL PŘEKROČEN";
+          stavIkona = Icons.access_time_filled_rounded;
+        } else if (rowCount < 100) {
+          // 3. Priorita: Málo dat
           stavBarva = _amber;
           stavText = "OMEZENÝ PROVOZ";
           stavPodpis = "NÍZKÝ POČET ZÁZNAMŮ V SYSTÉMU";
           stavIkona = Icons.warning_amber_rounded;
-        } else if (rowCount >= 100) {
+        } else {
+          // 4. Vše OK
           stavBarva = _emerald;
           stavText = "SYSTÉM AKTIVNÍ";
-          stavPodpis = "DATABÁZE JE PŘIPOJENA A SYNCHRONIZOVÁNA";
+          stavPodpis = "DATABÁZE JE AKTUÁLNÍ A SYNCHRONIZOVÁNA";
           stavIkona = Icons.check_circle_outline_rounded;
         }
 
@@ -109,7 +147,11 @@ class _DbStatusTabState extends State<DbStatusTab> {
                     ),
                     SettingsHelpers.buildDataRow(
                       "Poslední aktualizace", 
-                      _formatDate(lastEntry?['timestamp']),
+                      _formatDate(lastImportIso),
+                    ),
+                    SettingsHelpers.buildDataRow(
+                      "Nastavený interval", 
+                      interval, // Zobrazíme i nastavený interval
                     ),
                     SettingsHelpers.buildDataRow(
                       "Lokalita souboru", 
