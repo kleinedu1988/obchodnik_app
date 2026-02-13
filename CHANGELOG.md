@@ -6,6 +6,23 @@ The format is based on Keep a Changelog
 and this project adheres to Semantic Versioning.
 
 ---
+
+## [0.3.2] - 2026-02-13
+
+### Přidáno
+- **Nová architektura navigace**: Implementován rozšířený Sidebar s 8 sekcemi (Drop Zone, Nabídky, Objednávky, Párování, atd.).
+- **Skeleton obrazovky**: Vytvořeny prázdné pohledy (placeholder views) pro všechny nové moduly, připravené pro budoucí logiku.
+- **Hlavička aplikace**: Do postranního panelu přidána sekce s názvem "MRB BRIDGE" a číslem verze.
+
+### Změněno
+- **Rebranding**: Aplikace přejmenována na **"MRB Data Bridge"** (z původního MRB Obchodník) pro lepší vystižení ETL funkce.
+- Kompletní reorganizace souborové struktury pohledů (`views/ingestion`, `views/production`, `views/tools`...).
+- Aktualizována routovací logika v `main.dart` pro přepínání mezi novými moduly.
+
+### Opraveno
+- Vyřešeny konflikty názvů tříd mezi `Sidebar` a `AppSidebar` v hlavním souboru.
+- Doplněny chybějící importy pro `window_manager` a `flutter/foundation`.
+
 ## [0.3.1] - 2026-02-12
 
 ### Přidáno

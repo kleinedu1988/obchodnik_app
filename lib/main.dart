@@ -1,9 +1,48 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // Důležité pro kIsWeb
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:window_manager/window_manager.dart';
+import 'dart:io';
+
+// --- IMPORTY POHLEDŮ ---
+// Použijeme relativní cestu, je to bezpečnější
+import 'widgets/sidebar.dart'; 
 import 'views/settings/settings_view.dart';
-import 'widgets/sidebar.dart';
 import 'logic/actions.dart';
 
-void main() {
+// --- IMPORTY NOVÝCH MODULŮ ---
+import 'views/ingestion/ingestion_view.dart';
+import 'views/production/offer_editor_view.dart';
+import 'views/production/order_editor_view.dart';
+import 'views/tools/attachment_matching_view.dart';
+import 'views/tools/data_validator_view.dart';
+import 'views/tools/crm_export_view.dart';
+import 'views/config/mapping_profiles_view.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializace pro Desktop
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    
+    await windowManager.ensureInitialized();
+    WindowOptions windowOptions = const WindowOptions(
+      size: Size(1280, 800),
+      minimumSize: Size(1024, 768),
+      center: true,
+      backgroundColor: Colors.transparent,
+      skipTaskbar: false,
+      title: "MRB Data Bridge",
+    );
+    
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
+
   runApp(const MyApp());
 }
 
@@ -14,18 +53,16 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'MRB CRM',
+      title: 'MRB Data Bridge',
       theme: ThemeData.dark().copyWith(
-        // Změna na měkčí, profesionální tmavou šedou
-        scaffoldBackgroundColor: const Color(0xFF111111), 
+        scaffoldBackgroundColor: const Color(0xFF0F1115), // Deep Dark
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF4077D1),
           brightness: Brightness.dark,
-          // Povrchy prvků (karty, dialogy)
           surface: const Color(0xFF181818), 
         ),
         textTheme: ThemeData.dark().textTheme.apply(
-          fontFamily: 'Inter',
+          fontFamily: 'Segoe UI',
           bodyColor: Colors.white.withOpacity(0.85),
         ),
       ),
@@ -44,13 +81,13 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
 
+  // OPRAVA: Přidán parametr 'title', aby to sedělo s definicí v sidebar.dart
   void _onMenuSelected(int index, String title) {
     if (_selectedIndex == index) return;
     setState(() => _selectedIndex = index);
     
-    try {
-      zpracujKliknuti(context, title);
-    } catch (_) {}
+    // Volitelné: Zde můžeš použít 'title' pro logování nebo analytics
+    // debugPrint("Uživatel kliknul na: $title");
   }
 
   @override
@@ -58,20 +95,18 @@ class _AppShellState extends State<AppShell> {
     return Scaffold(
       body: Row(
         children: [
-          // Integrovaný sidebar (nyní na pozadí 0xFF0D0D0D pro jemný kontrast)
-          Sidebar(
+          // OPRAVA: Voláme 'Sidebar' (ne AppSidebar) a parametr je 'onItemSelected'
+          AppSidebar(
             selectedIndex: _selectedIndex,
             onItemSelected: _onMenuSelected,
           ),
           
-          // Hlavní pracovní plocha
+          // HLAVNÍ PRACOVNÍ PLOCHA
           Expanded(
             child: Container(
-              // Jemný přechod nebo pevná barva pracovní plochy
               color: Theme.of(context).scaffoldBackgroundColor,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
-                // Plynulý přechod mezi sekcemi
                 switchInCurve: Curves.easeInOut,
                 switchOutCurve: Curves.easeInOut,
                 child: KeyedSubtree(
@@ -86,48 +121,18 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  // --- ROZCESTNÍK (ROUTER) ---
   Widget _buildPageContent(int index) {
     switch (index) {
-      case 0: return _buildViewHeader("Dashboard", Icons.grid_view_rounded);
-      case 1: return _buildViewHeader("Zákazníci", Icons.person_search_rounded);
-      case 2: return _buildViewHeader("Analýza", Icons.analytics_outlined);
-      case 3: return const SettingsView();
-      case 4: return _buildViewHeader("Import dat", Icons.file_upload_outlined);
-      default: return const SizedBox();
+      case 0: return const IngestionView();          // Drop Zone
+      case 1: return const OfferEditorView();        // Nabídky
+      case 2: return const OrderEditorView();        // Objednávky
+      case 3: return const AttachmentMatchingView(); // Párování
+      case 4: return const DataValidatorView();      // Validator
+      case 5: return const CrmExportView();          // Export
+      case 6: return const MappingProfilesView();    // Profily
+      case 7: return const SettingsView();           // Nastavení
+      default: return const Center(child: Text("Stránka nenalezena"));
     }
-  }
-
-  Widget _buildViewHeader(String title, IconData icon) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(40, 48, 40, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              // Ikona v barvě akcentu
-              Icon(icon, color: const Color(0xFF4077D1), size: 24),
-              const SizedBox(width: 16),
-              Text(
-                title.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 20, 
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.0,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Subtilní dělící linka místo tlustého kontejneru
-          Container(
-            width: double.infinity,
-            height: 1,
-            color: Colors.white.withOpacity(0.05),
-          ),
-        ],
-      ),
-    );
   }
 }
