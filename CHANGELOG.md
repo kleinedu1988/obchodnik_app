@@ -7,6 +7,25 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.4.4] - 2026-02-14
+
+### Přidáno
+- **Workflow Controller**: Implementován centrální Singleton pro řízení stavu aplikace a zamykání procesních kroků.
+- **Smart Unpack**: Automatická extrakce .zip a .rar archivů do dočasného úložiště relace s následnou analýzou obsahu.
+- **Editor Dispatcher**: Dynamický rozcestník v produkční sekci, který přepíná mezi editorem Nabídek a Objednávek.
+- **Offer & Order Editors**: Kompletní UI pro redakci dokumentů s rozděleným layoutem (3:1) a vazbou na Ingesci.
+- **Pulsing Status Indicators**: Vizuální dýchající indikátory pro aktivní procesní kroky v Sidebaru.
+
+### Změněno
+- **Workflow Locking**: Implementována lineární progrese – Drop Zone se po úspěšném importu uzamkne (včetně zeleného checku) a aktivuje se Editor.
+- **Ingestion Summary**: Statistiky po importu nyní filtrují archivy a zobrazují pouze reálný počet extrahovaných souborů (.pdf, .step, atd.).
+- **AppShell Router**: Sjednoceny indexy navigace (0-6) a implementováno reaktivní překreslování Sidebaru.
+
+### Opraveno
+- **Namespace fix**: Vyřešen konflikt metod u balíčku `path` (přidán alias `p`).
+- **Constructor fix**: Opraveno předávání callbacků a pojmenovaných parametrů (`onSuccess`) v IngestionView.
+- **Sidebar UI**: Opraveno přetékání textu u dlouhých názvů modulů v navigaci.
+
 ## [0.4.3] - 2026-02-14
 
 ### Přidáno

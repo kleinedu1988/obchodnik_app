@@ -42,6 +42,7 @@ dependencies:
   url_launcher: ^6.2.5
   shared_preferences: ^2.2.3
   window_manager: ^0.5.1
+  archive: ^3.6.1
 
   # SYSTEM
   desktop_drop: ^0.4.4
