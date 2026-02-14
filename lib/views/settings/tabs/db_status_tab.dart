@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
-import 'package:intl/intl.dart'; // Pro formátování datumu
-import 'package:shared_preferences/shared_preferences.dart'; // Přidáno pro načítání intervalu
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../logic/db_service.dart';
 import '../../../logic/import_logic.dart';
 import '../settings_helpers.dart';
@@ -24,20 +25,29 @@ class _DbStatusTabState extends State<DbStatusTab> {
   static const Color _bgCard = Color(0xFF16181D);
   static const Color _borderColor = Color(0xFF2A2D35);
 
+  // NOVÉ: barvy pro sekce operací / materiálů (jak jsi měl v návrhu)
+  static const Color _opColor = Color(0xFFE056FD);
+  static const Color _matColor = Color(0xFFFF9F1C);
+
   late Future<List<dynamic>> _dbData;
 
   @override
   void initState() {
     super.initState();
-    _nactiData(); 
+    _nactiData();
   }
 
+  // =============================================================
+  //  NOVÉ: Future.wait doplněno o počty operací a materiálů
+  // =============================================================
   void _nactiData() {
     setState(() {
       _dbData = Future.wait([
         DbService().getLastEntry(),
         DbService().getRowCount(),
         SharedPreferences.getInstance(),
+        DbService().getOperaceCount(), // NOVÉ
+        DbService().getMaterialyCount(), // NOVÉ
       ]);
     });
   }
@@ -45,9 +55,9 @@ class _DbStatusTabState extends State<DbStatusTab> {
   String _formatDate(String? isoDate) {
     if (isoDate == null || isoDate.isEmpty) return "Nikdy";
     try {
-      DateTime dt = DateTime.parse(isoDate);
+      final dt = DateTime.parse(isoDate);
       return DateFormat('dd.MM.yyyy HH:mm').format(dt);
-    } catch (e) {
+    } catch (_) {
       return isoDate;
     }
   }
@@ -58,34 +68,47 @@ class _DbStatusTabState extends State<DbStatusTab> {
       future: _dbData,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor));
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor),
+          );
         }
 
-        // 1. Získání dat
+        // 1) Získání dat
         final lastEntry = snapshot.data?[0] as Map<String, dynamic>?;
         final rowCount = (snapshot.data?[1] as int?) ?? 0;
         final prefs = snapshot.data?[2] as SharedPreferences;
-        
-        // 2. Interval
+
+        final operaceCount = (snapshot.data?[3] as int?) ?? 0; // NOVÉ
+        final materialyCount = (snapshot.data?[4] as int?) ?? 0; // NOVÉ
+
+        // 2) Interval
         final interval = prefs.getString('sync_interval') ?? '1 měsíc';
         final lastImportIso = lastEntry?['timestamp'] as String?;
 
-        // 3. Logika stavu
+        // 3) Logika stavu
         bool isOutdated = false;
         if (lastImportIso != null) {
-          DateTime lastImport = DateTime.parse(lastImportIso);
-          DateTime now = DateTime.now();
-          Duration diff = now.difference(lastImport);
+          final lastImport = DateTime.parse(lastImportIso);
+          final now = DateTime.now();
+          final diff = now.difference(lastImport);
 
           switch (interval) {
-            case 'teď': isOutdated = diff.inSeconds > 10; break; // Pro testování
-            case '1 týden': isOutdated = diff.inDays > 7; break;
-            case '2 týdny': isOutdated = diff.inDays > 14; break;
-            case '1 měsíc': isOutdated = diff.inDays > 30; break;
+            case 'teď':
+              isOutdated = diff.inSeconds > 10; // Pro testování
+              break;
+            case '1 týden':
+              isOutdated = diff.inDays > 7;
+              break;
+            case '2 týdny':
+              isOutdated = diff.inDays > 14;
+              break;
+            case '1 měsíc':
+              isOutdated = diff.inDays > 30;
+              break;
           }
         }
 
-        // 4. Určení barev a ikon
+        // 4) Určení barev a ikon
         Color stavBarva;
         String stavText;
         String stavPodpis;
@@ -123,12 +146,15 @@ class _DbStatusTabState extends State<DbStatusTab> {
 
               const SizedBox(height: 32),
 
-              // 2. TECHNICKÁ SPECIFIKACE
+              // 2. TECHNICKÁ SPECIFIKACE (UPRAVENO)
               _headerText("TECHNICKÁ SPECIFIKACE"),
               const SizedBox(height: 12),
               _buildInfoPanel([
-                _buildDataRow("Celkový počet klientů", rowCount.toString()),
-                _buildDataRow("Poslední aktualizace", _formatDate(lastImportIso)),
+                _buildDataRow("Databáze zákazníků", "$rowCount záznamů", color: _accentColor),
+                _buildDataRow("Výrobní operace", "$operaceCount definic", color: _opColor),
+                _buildDataRow("Katalog materiálů", "$materialyCount položek", color: _matColor),
+                const Divider(color: _borderColor, height: 1, indent: 20, endIndent: 20),
+                _buildDataRow("Poslední import", _formatDate(lastImportIso)),
                 _buildDataRow("Nastavený interval", interval),
                 _buildDataRow("Databázový engine", "SQLite 3.40 (FFI)", isLast: true),
               ]),
@@ -203,7 +229,19 @@ class _DbStatusTabState extends State<DbStatusTab> {
     );
   }
 
-  Widget _buildDataRow(String label, String value, {bool isLast = false}) {
+  Widget _buildDataRow(
+    String label,
+    String value, {
+    bool isLast = false,
+    Color? color,
+  }) {
+    final valueStyle = TextStyle(
+      color: color ?? Colors.white,
+      fontSize: 13,
+      fontWeight: FontWeight.bold,
+      fontFamily: 'monospace',
+    );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
@@ -213,7 +251,7 @@ class _DbStatusTabState extends State<DbStatusTab> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13)),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+          Text(value, style: valueStyle),
         ],
       ),
     );
@@ -231,7 +269,10 @@ class _DbStatusTabState extends State<DbStatusTab> {
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: const Icon(Icons.sync_rounded, color: Colors.white24, size: 20),
           ),
           const SizedBox(width: 16),
@@ -239,8 +280,14 @@ class _DbStatusTabState extends State<DbStatusTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Synchronizace databáze", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                Text("Nahrajte Excel (.xlsx) pro aktualizaci klientské základny", style: TextStyle(fontSize: 11, color: Colors.white24)),
+                Text(
+                  "Synchronizace databáze",
+                  style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  "Nahrajte Excel (.xlsx) pro aktualizaci klientské základny",
+                  style: TextStyle(fontSize: 11, color: Colors.white24),
+                ),
               ],
             ),
           ),
@@ -254,7 +301,12 @@ class _DbStatusTabState extends State<DbStatusTab> {
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Text(
                   "IMPORT EXCEL",
-                  style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
             ),
@@ -267,27 +319,29 @@ class _DbStatusTabState extends State<DbStatusTab> {
   Widget _headerText(String text) {
     return Text(
       text,
-      style: TextStyle(color: Colors.white.withOpacity(0.25), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.5),
+      style: TextStyle(
+        color: Colors.white.withOpacity(0.25),
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.5,
+      ),
     );
   }
 
   // --- LOGIKA IMPORTU ---
 
   Future<void> _handleImport(BuildContext context) async {
-    // 1. Otevřít výběr souboru
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      allowedExtensions: ['xlsx', 'xls'], 
+    final result = await FilePicker.platform.pickFiles(
+      allowedExtensions: ['xlsx', 'xls'],
       type: FileType.custom,
       lockParentWindow: true,
     );
-    
+
     if (result != null && result.files.single.path != null) {
-      // 2. Zavolat logiku (Notifikace řeší ImportLogic uvnitř)
       await ImportLogic.importCustomers(context, File(result.files.single.path!));
-      
-      // 3. Po dokončení obnovit statistiky v tomto okně
+
       if (mounted) {
-        _nactiData(); 
+        _nactiData();
       }
     }
   }

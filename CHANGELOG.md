@@ -7,6 +7,21 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.4.3] - 2026-02-14
+
+### Přidáno
+- **Validace složek zákazníků (T/N)**: Zobrazení stavových teček ověřujících existenci složek pro technickou dokumentaci a nabídky.
+- **FolderValidator**: Nový pomocný modul pro kontrolu existence zákaznických složek na základě uložených root cest (SharedPreferences).
+- **DbStatus rozšíření**: Do diagnostiky přidány počty definic pro *Výrobní operace* a *Katalog materiálů*.
+
+### Změněno
+- **DbStatusTab**: Načítání diagnostických dat sjednoceno přes `Future.wait(...)` (včetně `getOperaceCount()` a `getMaterialyCount()`).
+- **Operace (UI/Model)**: Odstraněno pole ceny/hodinové sazby z UI i logiky (systém eviduje pouze technologické informace).
+
+### Opraveno
+- Zpřesněna a zjednodušena prezentace stavu v UI (méně zavádějících indikátorů, jasnější diagnostické metriky).
+
+
 ## [0.4.2] - 2026-02-14
 
 ### Přidáno

@@ -335,6 +335,18 @@ class DbService {
     }
   }
 
+  Future<int> getOperaceCount() async {
+  final db = await database;
+  final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM operace');
+  return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
+  }
+
+  Future<int> getMaterialyCount() async {
+  final db = await database;
+  final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM materialy');
+  return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
+  }
+
   Future<void> deleteMaterial(int id) async {
     final db = await database;
     await db.delete('materialy', where: 'id = ?', whereArgs: [id]);

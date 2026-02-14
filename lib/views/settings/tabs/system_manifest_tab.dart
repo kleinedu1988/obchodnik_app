@@ -20,7 +20,7 @@ class ModuleManifest {
 //  DATA: REGISTR VERZÍ (Aktualizováno pro v0.4.2)
 // =============================================================
 const List<ModuleManifest> systemModules = [
-  ModuleManifest(id: "CORE", name: "Jádro Aplikace (Shell)", version: "0.4.2", status: "Beta", completion: 0.45),
+  ModuleManifest(id: "CORE", name: "Jádro Aplikace (Shell)", version: "0.4.3", status: "Beta", completion: 0.46),
   ModuleManifest(id: "NAV", name: "Sidebar & Navigace", version: "0.8.0", status: "Stable", completion: 0.95),
   ModuleManifest(id: "ING", name: "Ingestion Engine (Drop)", version: "0.3.0", status: "Alpha", completion: 0.40),
   ModuleManifest(id: "DB", name: "Zákaznická Databáze", version: "0.4.0", status: "Stable", completion: 0.90),
