@@ -8,7 +8,7 @@ import 'dart:io';
 // Použijeme relativní cestu, je to bezpečnější
 import 'widgets/sidebar.dart'; 
 import 'views/settings/settings_view.dart';
-import 'logic/actions.dart';
+import 'logic/notifications.dart';
 
 // --- IMPORTY NOVÝCH MODULŮ ---
 import 'views/ingestion/ingestion_view.dart';
@@ -96,7 +96,7 @@ class _AppShellState extends State<AppShell> {
       body: Row(
         children: [
           // OPRAVA: Voláme 'Sidebar' (ne AppSidebar) a parametr je 'onItemSelected'
-          AppSidebar(
+          Sidebar(
             selectedIndex: _selectedIndex,
             onItemSelected: _onMenuSelected,
           ),
@@ -122,16 +122,18 @@ class _AppShellState extends State<AppShell> {
   }
 
   // --- ROZCESTNÍK (ROUTER) ---
-  Widget _buildPageContent(int index) {
+Widget _buildPageContent(int index) {
     switch (index) {
       case 0: return const IngestionView();          // Drop Zone
       case 1: return const OfferEditorView();        // Nabídky
       case 2: return const OrderEditorView();        // Objednávky
       case 3: return const AttachmentMatchingView(); // Párování
-      case 4: return const DataValidatorView();      // Validator
+      case 4: return const DataValidatorView();      // Validace Operací
       case 5: return const CrmExportView();          // Export
-      case 6: return const MappingProfilesView();    // Profily
-      case 7: return const SettingsView();           // Nastavení
+      
+      case 6: return const MappingProfilesView();    // Mapovací profily (Excel)
+      case 7: return const SettingsView();           // Nastavení (vč. Materiálů a Operací)
+      
       default: return const Center(child: Text("Stránka nenalezena"));
     }
   }

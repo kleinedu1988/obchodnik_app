@@ -7,6 +7,27 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.4.0] - 2026-02-14
+
+### Přidáno
+- **Ingestion Engine (Drop Zone)**: Implementována obrazovka pro Drag & Drop souborů s detekcí formátů (.xlsx, .pdf, .dxf, .step).
+- **Smart Unpack Logic**: Přidána podpora pro archivy (.zip) – systém je umí přijmout a připravit k rozbalení.
+- **Universal Notifications**: Centrální notifikační systém (`Notifications` class) s "Glassmorphism" designem pro Toasty a Progress bary.
+- **System Manifest**: Nová záložka v nastavení zobrazující verze jednotlivých modulů a zdraví systému.
+- **Search Debounce**: Přidáno 500ms zpoždění při vyhledávání zákazníků pro optimalizaci databázových dotazů.
+
+### Změněno
+- **Design System Overhaul**: Kompletní přechod na "Flat & Technical" vzhled (barvy #0F1115, #16181D, technické fonty, hranatější rohy).
+- **Import Logic**: Refaktorováno na použití `Isolate` (výpočet na pozadí) + `Batch Transactions` pro zápis do DB.
+- **Visual Feedback**: Import nyní ukazuje detailní progress bar (fáze analýzy vs. fáze zápisu).
+- **Customer List**: Data z DB jsou nyní konvertována na `mutable`, což opravilo pád aplikace při editaci cesty ke složce.
+- **General Settings**: Sjednocen vzhled přepínačů a cest s novým designem.
+
+### Opraveno
+- Opravena chyba `read-only` při pokusu o přiřazení složky zákazníkovi v seznamu.
+- Opraveno volání `Notifications.showProgress` s chybějícími pojmenovanými parametry.
+- Odstraněny staré závislosti na `SettingsHelpers` v `DbStatusTab` a `GeneralSettingsTab`.
+
 ## [0.3.2] - 2026-02-13
 
 ### Přidáno

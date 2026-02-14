@@ -21,18 +21,17 @@ class _DbStatusTabState extends State<DbStatusTab> {
   static const Color _amber = Color(0xFFF59E0B);
   static const Color _red = Color(0xFFEF4444);
   static const Color _orange = Colors.orangeAccent;
+  static const Color _bgCard = Color(0xFF16181D);
+  static const Color _borderColor = Color(0xFF2A2D35);
 
-  // Budeme si držet budoucí data v proměnné
-  // Index 0: LastEntry (Map), Index 1: RowCount (int), Index 2: SharedPreferences
   late Future<List<dynamic>> _dbData;
 
   @override
   void initState() {
     super.initState();
-    _nactiData(); // Prvotní načtení při otevření tabu
+    _nactiData(); 
   }
 
-  /// Metoda pro (znovu)načtení dat z databáze a preferencí
   void _nactiData() {
     setState(() {
       _dbData = Future.wait([
@@ -43,14 +42,13 @@ class _DbStatusTabState extends State<DbStatusTab> {
     });
   }
 
-  /// Převede ISO string (2026-02-12T...) na lidské datum (12.02.2026 21:15)
   String _formatDate(String? isoDate) {
-    if (isoDate == null || isoDate.isEmpty) return "Žádná data";
+    if (isoDate == null || isoDate.isEmpty) return "Nikdy";
     try {
       DateTime dt = DateTime.parse(isoDate);
       return DateFormat('dd.MM.yyyy HH:mm').format(dt);
     } catch (e) {
-      return isoDate; // Fallback
+      return isoDate;
     }
   }
 
@@ -59,27 +57,20 @@ class _DbStatusTabState extends State<DbStatusTab> {
     return FutureBuilder<List<dynamic>>(
       future: _dbData,
       builder: (context, snapshot) {
-        // Diagnostika do konzole
-        if (snapshot.hasData) {
-          debugPrint("STAV TABU: Záznamů=${snapshot.data![1]}, Poslední=${snapshot.data![0]?['timestamp']}");
-        }
-
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor),
-          );
+          return const Center(child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor));
         }
 
-        // 1. Získání dat z Future
+        // 1. Získání dat
         final lastEntry = snapshot.data?[0] as Map<String, dynamic>?;
         final rowCount = (snapshot.data?[1] as int?) ?? 0;
         final prefs = snapshot.data?[2] as SharedPreferences;
         
-        // 2. Načtení intervalu nastavení
+        // 2. Interval
         final interval = prefs.getString('sync_interval') ?? '1 měsíc';
         final lastImportIso = lastEntry?['timestamp'] as String?;
 
-        // 3. Výpočet stáří dat (Logika z tvého zadání)
+        // 3. Logika stavu
         bool isOutdated = false;
         if (lastImportIso != null) {
           DateTime lastImport = DateTime.parse(lastImportIso);
@@ -87,42 +78,38 @@ class _DbStatusTabState extends State<DbStatusTab> {
           Duration diff = now.difference(lastImport);
 
           switch (interval) {
-            case 'teď': isOutdated = diff.inSeconds > 10; break;
+            case 'teď': isOutdated = diff.inSeconds > 10; break; // Pro testování
             case '1 týden': isOutdated = diff.inDays > 7; break;
             case '2 týdny': isOutdated = diff.inDays > 14; break;
             case '1 měsíc': isOutdated = diff.inDays > 30; break;
           }
         }
 
-        // LOGIKA TŘÍ STAVŮ (Semafor) + ZASTARALÁ DATA
+        // 4. Určení barev a ikon
         Color stavBarva;
         String stavText;
         String stavPodpis;
         IconData stavIkona;
 
         if (rowCount == 0) {
-          // 1. Priorita: Prázdná DB
           stavBarva = _red;
           stavText = "KRITICKÝ STAV";
-          stavPodpis = "DATABÁZE JE PRÁZDNÁ, NUTNÝ IMPORT";
+          stavPodpis = "DATABÁZE JE PRÁZDNÁ";
           stavIkona = Icons.error_outline_rounded;
         } else if (isOutdated) {
-          // 2. Priorita: Zastaralá data (podle nastavení)
           stavBarva = _orange;
           stavText = "DATA JSOU ZASTARALÁ";
-          stavPodpis = "INTERVAL $interval BYL PŘEKROČEN";
+          stavPodpis = "INTERVAL AKTUALIZACE PŘEKROČEN";
           stavIkona = Icons.access_time_filled_rounded;
-        } else if (rowCount < 100) {
-          // 3. Priorita: Málo dat
+        } else if (rowCount < 50) {
           stavBarva = _amber;
           stavText = "OMEZENÝ PROVOZ";
-          stavPodpis = "NÍZKÝ POČET ZÁZNAMŮ V SYSTÉMU";
+          stavPodpis = "MÁLO DAT PRO ANALÝZU";
           stavIkona = Icons.warning_amber_rounded;
         } else {
-          // 4. Vše OK
           stavBarva = _emerald;
           stavText = "SYSTÉM AKTIVNÍ";
-          stavPodpis = "DATABÁZE JE AKTUÁLNÍ A SYNCHRONIZOVÁNA";
+          stavPodpis = "DATABÁZE JE AKTUÁLNÍ";
           stavIkona = Icons.check_circle_outline_rounded;
         }
 
@@ -137,35 +124,20 @@ class _DbStatusTabState extends State<DbStatusTab> {
               const SizedBox(height: 32),
 
               // 2. TECHNICKÁ SPECIFIKACE
-              SettingsHelpers.headerText("Technická specifikace"),
-              SettingsHelpers.buildGlassPanel(
-                child: Column(
-                  children: [
-                    SettingsHelpers.buildDataRow(
-                      "Celkový počet klientů", 
-                      rowCount.toString(),
-                    ),
-                    SettingsHelpers.buildDataRow(
-                      "Poslední aktualizace", 
-                      _formatDate(lastImportIso),
-                    ),
-                    SettingsHelpers.buildDataRow(
-                      "Nastavený interval", 
-                      interval, // Zobrazíme i nastavený interval
-                    ),
-                    SettingsHelpers.buildDataRow(
-                      "Lokalita souboru", 
-                      "mrb_obchodnik.db", 
-                      isLast: true
-                    ),
-                  ],
-                ),
-              ),
+              _headerText("TECHNICKÁ SPECIFIKACE"),
+              const SizedBox(height: 12),
+              _buildInfoPanel([
+                _buildDataRow("Celkový počet klientů", rowCount.toString()),
+                _buildDataRow("Poslední aktualizace", _formatDate(lastImportIso)),
+                _buildDataRow("Nastavený interval", interval),
+                _buildDataRow("Databázový engine", "SQLite 3.40 (FFI)", isLast: true),
+              ]),
 
               const SizedBox(height: 32),
 
-              // 3. SPRÁVA DAT (Import)
-              SettingsHelpers.headerText("Akce"),
+              // 3. AKCE
+              _headerText("SPRÁVA DAT"),
+              const SizedBox(height: 12),
               _buildImportAction(context),
             ],
           ),
@@ -174,11 +146,19 @@ class _DbStatusTabState extends State<DbStatusTab> {
     );
   }
 
-  // --- UI KOMPONENTY ---
+  // --- UI KOMPONENTY (Lokální, aby nechyběl SettingsHelpers) ---
 
   Widget _buildMainStatusCard(String text, String subtext, IconData icon, Color color) {
-    return SettingsHelpers.buildGlassPanel(
+    return Container(
       padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _bgCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(color: color.withOpacity(0.05), blurRadius: 20, spreadRadius: 0),
+        ],
+      ),
       child: Row(
         children: [
           Container(
@@ -188,7 +168,7 @@ class _DbStatusTabState extends State<DbStatusTab> {
               shape: BoxShape.circle,
               border: Border.all(color: color.withOpacity(0.2)),
             ),
-            child: Icon(icon, color: color, size: 28),
+            child: Icon(icon, color: color, size: 32),
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -197,21 +177,12 @@ class _DbStatusTabState extends State<DbStatusTab> {
               children: [
                 Text(
                   text,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.0,
-                  ),
+                  style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.0),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtext,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.3),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11, fontWeight: FontWeight.w500),
                 ),
               ],
             ),
@@ -221,25 +192,54 @@ class _DbStatusTabState extends State<DbStatusTab> {
     );
   }
 
+  Widget _buildInfoPanel(List<Widget> children) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _bgCard,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _borderColor),
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  Widget _buildDataRow(String label, String value, {bool isLast = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        border: isLast ? null : const Border(bottom: BorderSide(color: _borderColor)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13)),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImportAction(BuildContext context) {
-    return SettingsHelpers.buildGlassPanel(
+    return Container(
       padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _bgCard,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _borderColor),
+      ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.03), 
-              borderRadius: BorderRadius.circular(8)
-            ),
-            child: const Icon(Icons.refresh_rounded, color: Colors.white24, size: 20),
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.sync_rounded, color: Colors.white24, size: 20),
           ),
           const SizedBox(width: 16),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Synchronizace databáze", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                Text("Synchronizace databáze", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
                 Text("Nahrajte Excel (.xlsx) pro aktualizaci klientské základny", style: TextStyle(fontSize: 11, color: Colors.white24)),
               ],
             ),
@@ -264,18 +264,28 @@ class _DbStatusTabState extends State<DbStatusTab> {
     );
   }
 
-  /// Spustí import a po jeho dokončení aktualizuje UI
+  Widget _headerText(String text) {
+    return Text(
+      text,
+      style: TextStyle(color: Colors.white.withOpacity(0.25), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.5),
+    );
+  }
+
+  // --- LOGIKA IMPORTU ---
+
   Future<void> _handleImport(BuildContext context) async {
+    // 1. Otevřít výběr souboru
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       allowedExtensions: ['xlsx', 'xls'], 
-      type: FileType.custom
+      type: FileType.custom,
+      lockParentWindow: true,
     );
     
-    if (result != null) {
-      // 1. Spustíme proces importu
-      await ImportLogic.spustitImport(context, File(result.files.single.path!));
+    if (result != null && result.files.single.path != null) {
+      // 2. Zavolat logiku (Notifikace řeší ImportLogic uvnitř)
+      await ImportLogic.importCustomers(context, File(result.files.single.path!));
       
-      // 2. Počkáme chvíli na zapsání do DB a refreshneme lokální Future proměnnou
+      // 3. Po dokončení obnovit statistiky v tomto okně
       if (mounted) {
         _nactiData(); 
       }
