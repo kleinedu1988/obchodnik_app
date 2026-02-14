@@ -8,7 +8,9 @@ import 'package:flutter/foundation.dart';
 /// Zajišťuje bleskové vyhledávání díky indexům a stabilitu při importu velkých dat.
 class DbService {
   static Database? _db;
-  static const int _dbVersion = 2;
+
+  // 1) ZVEDNUTO: nová tabulka operace => bump verze DB
+  static const int _dbVersion = 3;
 
   // Singleton instance pro globální přístup
   static final DbService _instance = DbService._internal();
@@ -50,6 +52,7 @@ class DbService {
   //  DEFINICE SCHÉMATU
   // =============================================================
 
+  /// 2) SCHÉMA: přidána tabulka operace (bez ceny)
   Future<void> _createSchema(Database db) async {
     await db.execute('''
       CREATE TABLE zakaznici (
@@ -61,12 +64,35 @@ class DbService {
         timestamp TEXT
       )
     ''');
+
+    // NOVÁ TABULKA OPERACE
+    await db.execute('''
+      CREATE TABLE operace (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kod TEXT UNIQUE,
+        nazev TEXT,
+        poznamka TEXT
+      )
+    ''');
+
     await _ensureIndexes(db);
   }
 
+  /// 3) MIGRACE: verze 3 přidává tabulku operace (bez ceny)
   Future<void> _upgradeSchema(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _ensureIndexes(db);
+    }
+
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS operace (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          kod TEXT UNIQUE,
+          nazev TEXT,
+          poznamka TEXT
+        )
+      ''');
     }
   }
 
@@ -86,9 +112,8 @@ class DbService {
   /// Vrací 'last_import' (ISO string) a 'count' (počet řádků).
   Future<Map<String, dynamic>> getDatabaseInfo() async {
     final db = await database;
-    // Získáme čas nejnovějšího záznamu a celkový počet řádků
     final List<Map<String, dynamic>> res = await db.rawQuery(
-      'SELECT MAX(timestamp) as last_import, COUNT(*) as count FROM zakaznici'
+      'SELECT MAX(timestamp) as last_import, COUNT(*) as count FROM zakaznici',
     );
     return res.first;
   }
@@ -109,7 +134,6 @@ class DbService {
   Future<int> getRowCount() async {
     try {
       final db = await database;
-      // Implementace DISTINCT pro přesné počítání unikátních partnerů
       final result = await db.rawQuery('SELECT COUNT(DISTINCT externi_id) as cnt FROM zakaznici');
       return result.isNotEmpty ? int.parse(result.first['cnt'].toString()) : 0;
     } catch (e) {
@@ -137,11 +161,9 @@ class DbService {
   ) async {
     final db = await database;
 
-    // Signalizace začátku (pro progress bar na spodní hraně)
     onProgress(0.01);
 
     await db.transaction((txn) async {
-      // Před importem vyčistíme stará data, aby se nemíchala s novými
       await txn.delete('zakaznici');
 
       final batch = txn.batch();
@@ -150,7 +172,6 @@ class DbService {
       for (int i = 0; i < total; i++) {
         batch.insert('zakaznici', data[i]);
 
-        // Každých 300 záznamů pošleme info o progresu do UI
         if (i % 300 == 0 && i != 0) {
           onProgress(i / total);
         }
@@ -223,5 +244,62 @@ class DbService {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // =============================================================
+  //  OPERACE (CRUD) - NOVÉ
+  // =============================================================
+
+  Future<List<Map<String, dynamic>>> getOperace({String query = ''}) async {
+    final db = await database;
+
+    String sql = 'SELECT * FROM operace WHERE 1=1';
+    final args = <dynamic>[];
+
+    if (query.isNotEmpty) {
+      sql += ' AND (nazev LIKE ? OR kod LIKE ?)';
+      args.addAll(['%$query%', '%$query%']);
+    }
+
+    sql += ' ORDER BY kod ASC';
+    return db.rawQuery(sql, args);
+  }
+
+  /// Uložení operace (bez ceny).
+  /// - id == null => insert
+  /// - id != null => update
+  Future<void> saveOperace({
+    int? id,
+    required String kod,
+    required String nazev,
+    String poznamka = '',
+  }) async {
+    final db = await database;
+
+    final data = <String, dynamic>{
+      'kod': kod.trim().toUpperCase(),
+      'nazev': nazev.trim(),
+      'poznamka': poznamka.trim(),
+    };
+
+    if (id == null) {
+      await db.insert(
+        'operace',
+        data,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } else {
+      await db.update(
+        'operace',
+        data,
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  Future<void> deleteOperace(int id) async {
+    final db = await database;
+    await db.delete('operace', where: 'id = ?', whereArgs: [id]);
   }
 }

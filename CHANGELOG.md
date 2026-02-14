@@ -7,6 +7,21 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.4.1] - 2026-02-14
+
+### Přidáno
+- **Modul Výrobní operace**: Nová záložka v nastavení pro správu číselníku operací (CRUD).
+- **Editace operací**: Implementován dialog pro vytváření a úpravu operací (Kód, Název, Poznámka).
+- **Databázové schéma v3**: Přidána tabulka `operace` s indexací pro rychlé vyhledávání.
+
+### Změněno
+- **DB Migrace**: Automatická migrace databáze z v2 na v3 při startu aplikace.
+- **SettingsView**: Do navigace nastavení přidána 4. záložka "Výrobní Operace".
+- **Data Model**: Na základě zpětné vazby odstraněno pole `cena_hodina` z modelu operací – systém eviduje pouze technologické parametry.
+
+### Opraveno
+- Zajištěna konzistence UI ("Flat & Technical" design) i pro novou záložku operací (použití fialové akcentní barvy pro odlišení).
+
 ## [0.4.0] - 2026-02-14
 
 ### Přidáno

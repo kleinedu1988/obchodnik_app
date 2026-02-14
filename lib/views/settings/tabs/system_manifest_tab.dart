@@ -20,12 +20,14 @@ class ModuleManifest {
 //  DATA: REGISTR VERZÍ
 // =============================================================
 const List<ModuleManifest> systemModules = [
-  ModuleManifest(id: "CORE", name: "Jádro Aplikace (Shell)", version: "0.4.0", status: "Beta", completion: 0.25),
+  ModuleManifest(id: "CORE", name: "Jádro Aplikace (Shell)", version: "0.4.1", status: "Beta", completion: 0.25),
   ModuleManifest(id: "NAV", name: "Sidebar & Navigace", version: "0.5.0", status: "Stable", completion: 0.80),
   ModuleManifest(id: "ING", name: "Ingestion Engine (Drop)", version: "0.2.1", status: "Alpha", completion: 0.30),
   ModuleManifest(id: "DB", name: "Zákaznická Databáze", version: "0.2.0", status: "Alpha", completion: 0.25),
+  ModuleManifest(id: "OPS", name: "Výrobní Operace", version: "1.0.0", status: "Stable", completion: 1.0),
   ModuleManifest(id: "AI", name: "Inteligentní Mapování", version: "0.0.1", status: "Planning", completion: 0.05),
   ModuleManifest(id: "OUT", name: "Export & Tisk", version: "0.0.0", status: "Pending", completion: 0.00),
+  
 ];
 
 // =============================================================

@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'tabs/db_status_tab.dart';
 import 'tabs/general_settings_tab.dart';
 import 'tabs/customer_list_tab.dart';
-import 'tabs/system_manifest_tab.dart'; // NOVÉ
+import 'tabs/system_manifest_tab.dart';
+import 'package:mrb_obchodnik/views/settings/tabs/operations_list_tab.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -161,11 +162,7 @@ class SettingsView extends StatelessWidget {
                   ),
 
                   // 4. Operace (Placeholder)
-                  _buildPlaceholderTab(
-                    "Výrobní operace",
-                    "Definice technologií: Laser 2D, Laser 3D, Ohraňování, Závitování...",
-                    Icons.settings_applications_outlined,
-                  ),
+                  const OperationsListTab(),
 
                   // 5. Diagnostika
                   const DbStatusTab(),
