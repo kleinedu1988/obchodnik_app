@@ -6,6 +6,7 @@ import 'tabs/general_settings_tab.dart';
 import 'tabs/customer_list_tab.dart';
 import 'tabs/system_manifest_tab.dart';
 import 'package:mrb_obchodnik/views/settings/tabs/operations_list_tab.dart';
+import 'package:mrb_obchodnik/views/settings/tabs/materials_list_tab.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -155,11 +156,7 @@ class SettingsView extends StatelessWidget {
                   const CustomerListTab(),
 
                   // 3. Materiály (Placeholder)
-                  _buildPlaceholderTab(
-                    "Číselník materiálů",
-                    "Zde se budou párovat názvy z Excelu (např. 'Černý plech')\nna kódy pro CRM (např. 'S235JR').",
-                    Icons.dashboard_customize_outlined,
-                  ),
+                  MaterialsListTab(),
 
                   // 4. Operace (Placeholder)
                   const OperationsListTab(),

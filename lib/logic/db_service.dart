@@ -9,8 +9,8 @@ import 'package:flutter/foundation.dart';
 class DbService {
   static Database? _db;
 
-  // 1) ZVEDNUTO: nová tabulka operace => bump verze DB
-  static const int _dbVersion = 3;
+  // VERZE 4: Přidána tabulka materialy (katalog)
+  static const int _dbVersion = 4;
 
   // Singleton instance pro globální přístup
   static final DbService _instance = DbService._internal();
@@ -52,8 +52,9 @@ class DbService {
   //  DEFINICE SCHÉMATU
   // =============================================================
 
-  /// 2) SCHÉMA: přidána tabulka operace (bez ceny)
+  /// Schéma: zakaznici + operace + materialy(katalog)
   Future<void> _createSchema(Database db) async {
+    // 1. ZÁKAZNÍCI
     await db.execute('''
       CREATE TABLE zakaznici (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +66,7 @@ class DbService {
       )
     ''');
 
-    // NOVÁ TABULKA OPERACE
+    // 2. OPERACE (bez ceny, jen technologický popis)
     await db.execute('''
       CREATE TABLE operace (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,15 +76,27 @@ class DbService {
       )
     ''');
 
+    // 3. MATERIÁLY (Katalog s definicí tlouštěk)
+    await db.execute('''
+      CREATE TABLE materialy (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nazev TEXT,
+        alias TEXT,
+        tloustky TEXT
+      )
+    ''');
+
     await _ensureIndexes(db);
   }
 
-  /// 3) MIGRACE: verze 3 přidává tabulku operace (bez ceny)
+  /// Migrace databáze
   Future<void> _upgradeSchema(Database db, int oldVersion, int newVersion) async {
+    // V2: Indexy
     if (oldVersion < 2) {
       await _ensureIndexes(db);
     }
 
+    // V3: Operace
     if (oldVersion < 3) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS operace (
@@ -94,22 +107,42 @@ class DbService {
         )
       ''');
     }
+
+    // V4: Materiály
+    if (oldVersion < 4) {
+      // Pro jistotu smažeme, pokud existovala (při vývoji)
+      await db.execute('DROP TABLE IF EXISTS materialy');
+
+      await db.execute('''
+        CREATE TABLE materialy (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          nazev TEXT,
+          alias TEXT,
+          tloustky TEXT
+        )
+      ''');
+    }
   }
 
-  /// Indexy zajišťují bleskové vyhledávání. Přidán index i na externi_id pro COUNT DISTINCT.
+  /// Indexy zajišťují bleskové vyhledávání.
   Future<void> _ensureIndexes(Database db) async {
+    // Zákazníci
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_nazev ON zakaznici (nazev)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_ic ON zakaznici (ic)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_folder ON zakaznici (folder_path)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_extid ON zakaznici (externi_id)');
+    
+    // Operace
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_operace_kod ON operace (kod)');
+    
+    // Materiály
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_materialy_nazev ON materialy (nazev)');
   }
 
   // =============================================================
   //  DIAGNOSTIKA (Pro DbStatusTab)
   // =============================================================
 
-  /// Získá souhrnné informace o databázi v jednom dotazu.
-  /// Vrací 'last_import' (ISO string) a 'count' (počet řádků).
   Future<Map<String, dynamic>> getDatabaseInfo() async {
     final db = await database;
     final List<Map<String, dynamic>> res = await db.rawQuery(
@@ -118,7 +151,6 @@ class DbService {
     return res.first;
   }
 
-  /// Získá poslední záznam pro informaci o čerstvosti dat
   Future<Map<String, dynamic>?> getLastEntry() async {
     final db = await database;
     final maps = await db.query(
@@ -129,8 +161,6 @@ class DbService {
     return maps.isNotEmpty ? maps.first : null;
   }
 
-  /// Vrátí celkový počet unikátních zákazníků v systému podle externího ID.
-  /// To zabrání zkreslení, pokud by se v DB objevily duplicity.
   Future<int> getRowCount() async {
     try {
       final db = await database;
@@ -142,8 +172,6 @@ class DbService {
     }
   }
 
-  /// Metoda pro kompletní promazání databáze.
-  /// Užitečné pro odstranění "nepořádku" po chybných importech.
   Future<void> clearDatabase() async {
     final db = await database;
     await db.delete('zakaznici');
@@ -151,20 +179,18 @@ class DbService {
   }
 
   // =============================================================
-  //  VÝKONNÝ IMPORT
+  //  VÝKONNÝ IMPORT ZÁKAZNÍKŮ
   // =============================================================
 
-  /// Importuje data v dávkách (Batch).
   Future<void> importZakazniku(
     List<Map<String, dynamic>> data,
     Function(double) onProgress,
   ) async {
     final db = await database;
-
     onProgress(0.01);
 
     await db.transaction((txn) async {
-      await txn.delete('zakaznici');
+      await txn.delete('zakaznici'); // POZOR: Toto smaže i přiřazené složky!
 
       final batch = txn.batch();
       final total = data.length;
@@ -186,7 +212,7 @@ class DbService {
   }
 
   // =============================================================
-  //  DOTAZY (Paging + Filter + Search)
+  //  ZÁKAZNÍCI (Read & Update Path)
   // =============================================================
 
   Future<List<Map<String, dynamic>>> getZakaznici({
@@ -215,28 +241,10 @@ class DbService {
     return db.rawQuery(sql, args);
   }
 
-  // =============================================================
-  //  AKTUALIZACE CESTY
-  // =============================================================
-
   Future<void> updateFolderPath(int id, String newPath) async {
     final db = await database;
-
     final normalized = newPath.trim();
     final valueToStore = normalized.isEmpty ? null : normalized;
-
-    final existing = await db.query(
-      'zakaznici',
-      columns: ['folder_path'],
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-
-    if (existing.isNotEmpty) {
-      final current = (existing.first['folder_path'] ?? '').toString().trim();
-      if (current == normalized) return;
-    }
 
     await db.update(
       'zakaznici',
@@ -247,27 +255,23 @@ class DbService {
   }
 
   // =============================================================
-  //  OPERACE (CRUD) - NOVÉ
+  //  OPERACE (CRUD)
   // =============================================================
 
   Future<List<Map<String, dynamic>>> getOperace({String query = ''}) async {
     final db = await database;
-
     String sql = 'SELECT * FROM operace WHERE 1=1';
     final args = <dynamic>[];
 
     if (query.isNotEmpty) {
-      sql += ' AND (nazev LIKE ? OR kod LIKE ?)';
-      args.addAll(['%$query%', '%$query%']);
+      sql += ' AND (nazev LIKE ? OR kod LIKE ? OR poznamka LIKE ?)';
+      args.addAll(['%$query%', '%$query%', '%$query%']);
     }
 
     sql += ' ORDER BY kod ASC';
     return db.rawQuery(sql, args);
   }
 
-  /// Uložení operace (bez ceny).
-  /// - id == null => insert
-  /// - id != null => update
   Future<void> saveOperace({
     int? id,
     required String kod,
@@ -275,7 +279,6 @@ class DbService {
     String poznamka = '',
   }) async {
     final db = await database;
-
     final data = <String, dynamic>{
       'kod': kod.trim().toUpperCase(),
       'nazev': nazev.trim(),
@@ -283,23 +286,57 @@ class DbService {
     };
 
     if (id == null) {
-      await db.insert(
-        'operace',
-        data,
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await db.insert('operace', data, conflictAlgorithm: ConflictAlgorithm.replace);
     } else {
-      await db.update(
-        'operace',
-        data,
-        where: 'id = ?',
-        whereArgs: [id],
-      );
+      await db.update('operace', data, where: 'id = ?', whereArgs: [id]);
     }
   }
 
   Future<void> deleteOperace(int id) async {
     final db = await database;
     await db.delete('operace', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // =============================================================
+  //  MATERIÁLY (CRUD)
+  // =============================================================
+
+  Future<List<Map<String, dynamic>>> getMaterialy({String query = ''}) async {
+    final db = await database;
+    String sql = 'SELECT * FROM materialy WHERE 1=1';
+    final args = <dynamic>[];
+
+    if (query.isNotEmpty) {
+      sql += ' AND (nazev LIKE ? OR alias LIKE ?)';
+      args.addAll(['%$query%', '%$query%']);
+    }
+
+    sql += ' ORDER BY nazev ASC';
+    return db.rawQuery(sql, args);
+  }
+
+  Future<void> saveMaterial({
+    int? id,
+    required String nazev,
+    String alias = '',
+    String tloustky = '',
+  }) async {
+    final db = await database;
+    final data = <String, dynamic>{
+      'nazev': nazev.trim().toUpperCase(),
+      'alias': alias.trim(),
+      'tloustky': tloustky.trim(),
+    };
+
+    if (id == null) {
+      await db.insert('materialy', data);
+    } else {
+      await db.update('materialy', data, where: 'id = ?', whereArgs: [id]);
+    }
+  }
+
+  Future<void> deleteMaterial(int id) async {
+    final db = await database;
+    await db.delete('materialy', where: 'id = ?', whereArgs: [id]);
   }
 }

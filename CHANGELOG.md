@@ -7,6 +7,27 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.4.2] - 2026-02-14
+
+### Přidáno
+- **Katalog Materiálů**: Nový modul pro správu materiálů s podporou hlavního označení a aliasů.
+- **Thickness Manager**: Specializovaný dialog pro intuitivní správu tlouštěk materiálů (v mm) s podporou automatického třídění a mazání.
+- **Databázové schéma v4**: Implementace tabulky `materialy` a optimalizačních indexů.
+
+### Změněno
+- **Vizuální sjednocení (Barevná identita)**: 
+  - Zákazníci: **Modrá** (#4077D1)
+  - Materiály: **Oranžová** (#FF9F1C)
+  - Operace: **Růžová/Fialová** (#E056FD)
+- **Redesign Customer List**: 
+  - Identifikace zákazníka (Název, IČ, ID) sjednocena do kompaktního modrého panelu.
+  - Cesta ke složce přepracována na přímý textový input pro manuální vkládání cest.
+- **UX Optimalizace**: Odstraněna tlačítka pro průzkumníka souborů u zákazníků pro maximální rychlost manuálního vkládání.
+
+### Opraveno
+- Opravena chyba `List<Widget>` v komponentě Wrap u materiálů.
+- Vyřešeny chybějící metody v `MaterialsListTabState` a opraveny importy notifikací.
+
 ## [0.4.1] - 2026-02-14
 
 ### Přidáno

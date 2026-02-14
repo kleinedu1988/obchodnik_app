@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p; // Pro parsování názvu složky
 
 // Importy logiky a UI
-import 'package:mrb_obchodnik/logic/db_service.dart';
+import '../../../logic/db_service.dart';
 import 'package:mrb_obchodnik/logic/notifications.dart'; 
 
 class CustomerListTab extends StatefulWidget {
@@ -18,19 +19,17 @@ class _CustomerListTabState extends State<CustomerListTab> {
   final List<Map<String, dynamic>> _seznamZakazniku = [];
   final ScrollController _scrollController = ScrollController();
   
-  // Stav vyhledávání a filtrů
+  // Stav
   Timer? _debounce;
   String _query = '';
   bool _onlyMissing = false;
-  
-  // Stav načítání
   int _offset = 0;
   bool _isLoading = false;
   bool _hasMore = true;
 
-  // Design Konstanty (Flat & Technical)
+  // Design (Blue Theme)
   static const Color _bgCard = Color(0xFF16181D);
-  static const Color _accentColor = Color(0xFF4077D1);
+  static const Color _blueColor = Color(0xFF4077D1);
   static const Color _borderColor = Color(0xFF2A2D35);
   static const Color _textDim = Colors.white54;
 
@@ -42,7 +41,6 @@ class _CustomerListTabState extends State<CustomerListTab> {
   }
 
   void _onScroll() {
-    // Infinite Scroll: Načti další, když jsme 200px od konce
     if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
       if (!_isLoading && _hasMore) {
         _loadData(loadMore: true);
@@ -57,11 +55,9 @@ class _CustomerListTabState extends State<CustomerListTab> {
     super.dispose();
   }
 
-  // --- LOGIKA DAT ---
-
   void _onSearchChanged(String val) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
+    _debounce = Timer(const Duration(milliseconds: 300), () {
       setState(() {
         _query = val;
         _resetAndReload();
@@ -89,7 +85,6 @@ class _CustomerListTabState extends State<CustomerListTab> {
         jenBezSlozky: _onlyMissing
       );
 
-      // DŮLEŽITÉ: Vytvoříme modifikovatelnou kopii dat (sqflite vrací read-only mapy)
       final List<Map<String, dynamic>> mutableData = rawData
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
@@ -104,35 +99,10 @@ class _CustomerListTabState extends State<CustomerListTab> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        Notifications.showError(context, "CHYBA NAČÍTÁNÍ DAT: $e");
+        Notifications.showError(context, "CHYBA: $e");
       }
     }
   }
-
-  Future<void> _priraditSlozku(Map<String, dynamic> item) async {
-    // 1. Výběr složky
-    String? selectedDirectory = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: "Vyberte složku pro klienta: ${item['nazev']}",
-      lockParentWindow: true,
-    );
-    
-    if (selectedDirectory != null) {
-      // 2. Update DB
-      await DbService().updateFolderPath(item['id'], selectedDirectory);
-      
-      if (mounted) {
-        // 3. Notifikace
-        Notifications.showSuccess(context, "SLOŽKA PŘIŘAZENA: ${item['nazev']}");
-        
-        // 4. Lokální refresh (nyní bezpečný díky mutableData)
-        setState(() {
-           item['folder_path'] = selectedDirectory;
-        });
-      }
-    }
-  }
-
-  // --- UI ---
 
   @override
   Widget build(BuildContext context) {
@@ -144,44 +114,33 @@ class _CustomerListTabState extends State<CustomerListTab> {
         const SizedBox(height: 24),
         _buildTableHeader(),
         
-        // Seznam nebo Empty State
         Expanded(
           child: _seznamZakazniku.isEmpty && !_isLoading
               ? _buildEmptyState()
-              : _buildList(),
+              : ListView.separated(
+                  controller: _scrollController,
+                  itemCount: _seznamZakazniku.length + (_isLoading ? 1 : 0),
+                  padding: const EdgeInsets.only(bottom: 40),
+                  separatorBuilder: (context, index) => const Divider(color: _borderColor, height: 1),
+                  itemBuilder: (context, index) {
+                    if (index == _seznamZakazniku.length) {
+                      return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2, color: _blueColor)));
+                    }
+                    return _CustomerRow(
+                      item: _seznamZakazniku[index], 
+                      accentColor: _blueColor,
+                      borderColor: _borderColor,
+                    );
+                  },
+                ),
         ),
       ],
-    );
-  }
-
-  Widget _buildList() {
-    return ListView.separated(
-      controller: _scrollController,
-      itemCount: _seznamZakazniku.length + (_isLoading ? 1 : 0),
-      padding: const EdgeInsets.only(bottom: 40),
-      separatorBuilder: (context, index) => const Divider(color: _borderColor, height: 1),
-      itemBuilder: (context, index) {
-        // Loader na konci seznamu
-        if (index == _seznamZakazniku.length) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16), 
-              child: SizedBox(
-                width: 20, height: 20, 
-                child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor)
-              )
-            )
-          );
-        }
-        return _buildCustomerRow(_seznamZakazniku[index]);
-      },
     );
   }
 
   Widget _buildControls() {
     return Row(
       children: [
-        // SEARCH BAR
         Expanded(
           child: Container(
             height: 40,
@@ -193,7 +152,7 @@ class _CustomerListTabState extends State<CustomerListTab> {
             child: TextField(
               onChanged: _onSearchChanged,
               style: const TextStyle(fontSize: 13, color: Colors.white),
-              cursorColor: _accentColor,
+              cursorColor: _blueColor,
               decoration: InputDecoration(
                 hintText: "Hledat klienta (Název, IČ, ID)...",
                 hintStyle: const TextStyle(color: _textDim, fontSize: 13),
@@ -206,7 +165,6 @@ class _CustomerListTabState extends State<CustomerListTab> {
         ),
         const SizedBox(width: 16),
         
-        // FILTER TOGGLE
         InkWell(
           onTap: () {
             setState(() {
@@ -219,10 +177,10 @@ class _CustomerListTabState extends State<CustomerListTab> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             height: 40,
             decoration: BoxDecoration(
-              color: _onlyMissing ? _accentColor.withOpacity(0.15) : _bgCard,
+              color: _onlyMissing ? _blueColor.withOpacity(0.15) : _bgCard,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: _onlyMissing ? _accentColor.withOpacity(0.5) : _borderColor
+                color: _onlyMissing ? _blueColor.withOpacity(0.5) : _borderColor
               ),
             ),
             child: Row(
@@ -230,13 +188,13 @@ class _CustomerListTabState extends State<CustomerListTab> {
                 Icon(
                   _onlyMissing ? Icons.folder_off_rounded : Icons.filter_list_rounded,
                   size: 16,
-                  color: _onlyMissing ? _accentColor : _textDim,
+                  color: _onlyMissing ? _blueColor : _textDim,
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  "POUZE BEZ SLOŽKY",
+                  "JEN BEZ SLOŽKY",
                   style: TextStyle(
-                    color: _onlyMissing ? _accentColor : _textDim,
+                    color: _onlyMissing ? _blueColor : _textDim,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 0.5,
@@ -258,128 +216,19 @@ class _CustomerListTabState extends State<CustomerListTab> {
       ),
       child: Row(
         children: [
-          _headerText("IDENTIFIKACE", flex: 3),
-          _headerText("CESTA K DOKUMENTACI", flex: 5),
-          _headerText("STAV", flex: 2, align: TextAlign.center),
-          const SizedBox(width: 40), // Místo pro Edit tlačítko
+          _headerText("IDENTIFIKACE ZÁKAZNÍKA", flex: 3),
+          _headerText("KOŘENOVÁ SLOŽKA (ZADEJTE MANUÁLNĚ)", flex: 5),
         ],
       ),
     );
   }
 
-  Widget _buildCustomerRow(Map<String, dynamic> item) {
-    bool hasPath = item['folder_path'] != null && item['folder_path'].toString().isNotEmpty;
-
-    return InkWell(
-      onTap: () => _priraditSlozku(item),
-      hoverColor: Colors.white.withOpacity(0.02),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            // 1. IDENTIFIKACE
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item['nazev'], maxLines: 1, overflow: TextOverflow.ellipsis, 
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      _smallTag(item['externi_id'] ?? 'ID--', Colors.blueGrey),
-                      const SizedBox(width: 6),
-                      if (item['ic'] != null && item['ic'].toString().isNotEmpty)
-                        _smallTag("IČ: ${item['ic']}", Colors.grey),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            
-            // 2. CESTA
-            Expanded(
-              flex: 5,
-              child: Row(
-                children: [
-                  Icon(Icons.folder_open_rounded, size: 16, color: hasPath ? _accentColor : Colors.white10),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      hasPath ? item['folder_path'] : '---',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontFamily: 'monospace',
-                        color: hasPath ? Colors.white70 : Colors.white12,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // 3. STAV
-            Expanded(
-              flex: 2,
-              child: Center(
-                child: _buildStatusChip(hasPath),
-              ),
-            ),
-            
-            // 4. AKCE
-            IconButton(
-              onPressed: () => _priraditSlozku(item),
-              icon: const Icon(Icons.edit_rounded, size: 16),
-              color: Colors.white24,
-              tooltip: "Změnit složku",
-              hoverColor: Colors.white10,
-              splashRadius: 20,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // --- POMOCNÉ WIDGETY ---
-
-  Widget _headerText(String text, {int flex = 1, TextAlign align = TextAlign.left}) {
+  Widget _headerText(String text, {int flex = 1}) {
     return Expanded(
       flex: flex,
       child: Text(
         text,
-        textAlign: align,
-        style: const TextStyle(
-          color: Colors.white30,
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 1.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _smallTag(String text, Color color) {
-    return Text(
-      text,
-      style: TextStyle(color: color, fontSize: 10, fontFamily: 'monospace'),
-    );
-  }
-
-  Widget _buildStatusChip(bool isActive) {
-    final color = isActive ? const Color(0xFF10B981) : Colors.amber.shade700;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Text(
-        isActive ? "PŘIPOJENO" : "CHYBÍ",
-        style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold),
+        style: const TextStyle(color: Colors.white30, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.5),
       ),
     );
   }
@@ -391,12 +240,195 @@ class _CustomerListTabState extends State<CustomerListTab> {
         children: [
           const Icon(Icons.search_off_rounded, size: 48, color: Colors.white12),
           const SizedBox(height: 16),
-          Text(
-            "Žádní zákazníci nenalezeni",
-            style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14),
-          ),
+          Text("Žádní zákazníci nenalezeni", style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14)),
         ],
       ),
+    );
+  }
+}
+
+// =============================================================================
+//  ŘÁDEK ZÁKAZNÍKA - POUZE MANUÁLNÍ ZADÁVÁNÍ
+// =============================================================================
+
+class _CustomerRow extends StatefulWidget {
+  final Map<String, dynamic> item;
+  final Color accentColor;
+  final Color borderColor;
+
+  const _CustomerRow({
+    required this.item,
+    required this.accentColor,
+    required this.borderColor,
+  });
+
+  @override
+  State<_CustomerRow> createState() => _CustomerRowState();
+}
+
+class _CustomerRowState extends State<_CustomerRow> {
+  late TextEditingController _pathCtrl;
+  final FocusNode _focusNode = FocusNode();
+  bool _isHovering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pathCtrl = TextEditingController(text: widget.item['folder_path'] ?? '');
+    
+    // Ukládání při ztrátě focusu (kliknutí jinam)
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus) {
+        _updatePath(_pathCtrl.text);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _CustomerRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item['folder_path'] != widget.item['folder_path']) {
+       if (!_focusNode.hasFocus && _pathCtrl.text != widget.item['folder_path']) {
+         _pathCtrl.text = widget.item['folder_path'] ?? '';
+       }
+    }
+  }
+
+  @override
+  void dispose() {
+    _pathCtrl.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _updatePath(String path) async {
+    final cleanPath = path.trim();
+    // Uložíme pouze pokud se hodnota skutečně změnila oproti DB
+    if (cleanPath == (widget.item['folder_path'] ?? '')) return;
+
+    await DbService().updateFolderPath(widget.item['id'], cleanPath);
+    if (mounted) {
+      setState(() {
+        widget.item['folder_path'] = cleanPath;
+      });
+      Notifications.showSuccess(context, "CESTA PRO ${widget.item['nazev']} ULOŽENA");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
+      child: Container(
+        color: _isHovering ? Colors.white.withOpacity(0.02) : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            // 1. IDENTIFIKACE
+            Expanded(
+              flex: 3,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: widget.accentColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: widget.accentColor.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.item['nazev'],
+                      style: TextStyle(
+                        color: widget.accentColor, 
+                        fontSize: 12, 
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace',
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        _infoTag("ID", widget.item['externi_id']),
+                        const SizedBox(width: 12),
+                        if (widget.item['ic'] != null && widget.item['ic'].toString().isNotEmpty)
+                          _infoTag("IČ", widget.item['ic']),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(width: 16),
+
+            // 2. CESTA (Předěláno na čistý ruční input)
+            Expanded(
+              flex: 5,
+              child: Container(
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: _focusNode.hasFocus ? widget.accentColor.withOpacity(0.5) : widget.borderColor
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.edit_note_rounded, 
+                      size: 16, 
+                      color: _pathCtrl.text.isEmpty ? Colors.white10 : widget.accentColor.withOpacity(0.5)
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _pathCtrl,
+                        focusNode: _focusNode,
+                        style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: Colors.white70),
+                        cursorColor: widget.accentColor,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          hintText: "Vložte nebo napište cestu...",
+                          hintStyle: TextStyle(color: Colors.white10, fontSize: 11),
+                          isDense: true,
+                        ),
+                        onSubmitted: (val) => _updatePath(val),
+                      ),
+                    ),
+                    if (_pathCtrl.text.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 14, color: Colors.white12),
+                        onPressed: () {
+                          _pathCtrl.clear();
+                          _updatePath('');
+                        },
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        splashRadius: 10,
+                      )
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoTag(String label, String? value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text("$label: ", style: TextStyle(color: widget.accentColor.withOpacity(0.6), fontSize: 10, fontWeight: FontWeight.bold)),
+        Text(value ?? '-', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 10, fontFamily: 'monospace')),
+      ],
     );
   }
 }
