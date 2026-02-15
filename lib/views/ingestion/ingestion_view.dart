@@ -1,266 +1,212 @@
 import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:cross_file/cross_file.dart';
-import 'dart:async';
-import 'package:path/path.dart' as p;
 
-// Logika a UI komponenty
+// --- LOGIKA A SLUŽBY ---
 import '../../../logic/ingestion_service.dart';
 import '../../../logic/workflow_controller.dart';
 import '../../../logic/notifications.dart';
 
 class IngestionView extends StatefulWidget {
-  final VoidCallback onSuccess; // Callback pro přepnutí tabu v Shellu
-
-  const IngestionView({
-    super.key,
-    required this.onSuccess,
-  });
+  const IngestionView({super.key});
 
   @override
   State<IngestionView> createState() => _IngestionViewState();
 }
 
 class _IngestionViewState extends State<IngestionView> with SingleTickerProviderStateMixin {
-  // --- STAV A LOGIKA ---
-  late AnimationController _controller;
-  final IngestionService _service = IngestionService();
-  final ValueNotifier<double> _progressNotifier = ValueNotifier(0.0);
+  // --- KONFIGURACE ---
+  late AnimationController _animationController;
+  final IngestionService _ingestionService = IngestionService();
+  final WorkflowController _workflow = WorkflowController();
 
   bool _isDragging = false;
-  IngestionResult? _summary;
 
-  // --- DESIGN KONSTANTY (v0.4.2 Standard) ---
+  // --- DESIGN SYSTÉMU BRIDGE ---
   static const Color _bgDeep = Color(0xFF0F1115);
   static const Color _bgCard = Color(0xFF16181D);
   static const Color _accentColor = Color(0xFF4077D1);
   static const Color _borderColor = Color(0xFF2A2D35);
-  static const Color _dragActiveColor = Colors.greenAccent;
+  static const Color _textDim = Colors.white24;
+
+  // --- LOGICKÝ ZÁMEK (Policista drží klíč) ---
+  bool get _isLocked => _workflow.isEditorUnlocked || _workflow.isProcessing;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _progressNotifier.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
   // ===========================================================================
-  //  HLAVNÍ PROCES (Ingesce & Unpack)
+  //  LOGIKA: Zpracování souborů
   // ===========================================================================
 
-  Future<void> _processFiles(List<XFile> files) async {
-    if (files.isEmpty) return;
+  Future<void> _handleFileAction(List<XFile> files) async {
+    // Pokud je UI zamčené, ignorujeme veškeré pokusy (bezpečnostní pojistka)
+    if (files.isEmpty || _isLocked) return;
 
-    _progressNotifier.value = 0.0;
+    _workflow.setProcessing(true);
 
-    // Detekce archivů pro vizuální zpětnou vazbu
-    final bool hasArchives = files.any(
-      (f) => p.extension(f.path).toLowerCase() == '.zip' || p.extension(f.path).toLowerCase() == '.rar',
-    );
+    try {
+      // 1. Dělník (Service) připraví a roztřídí soubory v sandboxu
+      final result = await _ingestionService.processFiles(files);
+      
+      if (!mounted) return;
 
-    Notifications.showProgress(
-      context,
-      progressNotifier: _progressNotifier,
-      taskName: hasArchives ? "SMART UNPACK & EXTRAKCE" : "ANALÝZA STRUKTURY",
-      doneText: "HOTOVO",
-    );
+      // 2. Notifikace podle výsledku třídění
+      if (result.ignoredCount > 0) {
+        Notifications.showWarning(context, "DOKONČENO S IGNOROVÁNÍM: ${result.summaryLine}");
+      } else {
+        Notifications.showSuccess(context, "SOUBORY ROZTŘÍDĚNY: ${result.summaryLine}");
+      }
 
-    // Volání IngestionService (tady probíhá reálné rozbalování a třídění)
-    final result = await _service.processFiles(files);
-
-    // UX dýchání - progress skok
-    _progressNotifier.value = 0.8;
-    await Future.delayed(const Duration(milliseconds: 400));
-    _progressNotifier.value = 1.0;
-
-    if (!mounted) return;
-
-    if (result.isEmpty) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      Notifications.showWarning(context, "NENALEZENA ŽÁDNÁ PODPOROVANÁ DATA");
-      return;
+      // 3. Policista (Controller) převezme výsledek a rozhodne o stavu
+      await _workflow.handleIngestion(result);
+      
+    } catch (e) {
+      Notifications.showError(context, "CHYBA INGESCE: $e");
+    } finally {
+      if (mounted) _workflow.setProcessing(false);
     }
-
-    setState(() => _summary = result);
-
-    Notifications.finishProgress(
-      context,
-      finalMessage: hasArchives
-          ? "ARCHIV ROZBALEN: ${result.files.length} POLOŽEK PŘIPRAVENO"
-          : "PŘIJATO: ${result.files.length} SOUBORŮ",
-    );
   }
 
   // ===========================================================================
-  //  STAV 1: DROP ZONE VIEW
+  //  UI STAVBA
   // ===========================================================================
 
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _workflow,
+      builder: (context, _) {
+        // AbsorbPointer fyzicky znemožní veškeré klikání a přetahování, pokud je zamčeno
+        return AbsorbPointer(
+          absorbing: _isLocked,
+          child: Scaffold(
+            backgroundColor: _bgDeep,
+            body: Center(
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 500),
+                // Vizuální znázornění nedostupnosti (ztlumení celého okna)
+                opacity: _isLocked ? 0.35 : 1.0, 
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  child: _workflow.lastIngestion == null 
+                      ? _buildDropZone() 
+                      : _buildDecisionOverlay(),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 1. VÝCHOZÍ STAV: DropZone
   Widget _buildDropZone() {
     return DropTarget(
-      onDragEntered: (_) => setState(() => _isDragging = true),
+      onDragEntered: (_) {
+        if (!_isLocked) setState(() => _isDragging = true);
+      },
       onDragExited: (_) => setState(() => _isDragging = false),
-      onDragDone: (details) => _processFiles(details.files),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildAnimatedDropCard(),
-            const SizedBox(height: 48),
-            _buildFormatLegend(),
-            const SizedBox(height: 32),
-            _buildBrowseButton(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ===========================================================================
-  //  STAV 2: SUMMARY REPORT VIEW (Po nahrání)
-  // ===========================================================================
-
-  Widget _buildSummaryReport() {
-    final s = _summary!;
-    return Center(
-      child: Container(
-        width: 600,
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: _bgCard,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _borderColor),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 40)],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.inventory_2_outlined, color: _accentColor, size: 48),
-            const SizedBox(height: 16),
-            const Text(
-              "SOUHRN PŘIJATÝCH DAT",
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 2),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              "Obsah archivů byl extrahován do dočasné relace.",
-              style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 11),
-            ),
-            const SizedBox(height: 32),
-
-            // STATISTIKY (Zde už ZIPy nejsou, jen rozbalený obsah)
-            _buildSummaryRow("Excel data (.xlsx/.xls)", s.dataCount, Colors.green),
-            _buildSummaryRow("Technické výkresy (.pdf)", s.drawingCount, Colors.red),
-            _buildSummaryRow("3D Modely & CAD (.step, .igs, .dxf)", s.cadCount, Colors.blue),
-            _buildSummaryRow("Ostatní přílohy (img, html, txt)", s.assetCount, Colors.white38),
-
-            const SizedBox(height: 40),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => setState(() => _summary = null),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.white10),
-                      foregroundColor: Colors.white30,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: const Text("ZRUŠIT"),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      // 1. Odemkneme Sidebar workflow přes Singleton
-                      WorkflowController().unlockWorkflow(DocType.offer);
-                      // 2. Voláme callback do AppShellu pro přepnutí tabu
-                      widget.onSuccess();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _accentColor,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: const Text("POKRAČOVAT K EDITORU"),
-                  ),
-                ),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ===========================================================================
-  //  UI POMOCNÉ PRVKY
-  // ===========================================================================
-
-  Widget _buildSummaryRow(String label, int count, Color color) {
-    if (count == 0) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
+      onDragDone: (details) => _handleFileAction(details.files),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 16),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-          const Spacer(),
-          Text("$count ks", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+          _buildAnimatedDropCard(),
+          const SizedBox(height: 48),
+          _buildBrowseButton(),
+          const SizedBox(height: 32),
+          _buildFormatLegend(),
         ],
       ),
     );
   }
 
+  /// 2. ROZHODOVACÍ STAV: Karta po nahrání dat
+  Widget _buildDecisionOverlay() {
+    final result = _workflow.lastIngestion!;
+    
+    return Container(
+      key: const ValueKey("summary_card"),
+      width: 560,
+      padding: const EdgeInsets.all(40),
+      decoration: BoxDecoration(
+        color: _bgCard,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _borderColor),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 40)],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.inventory_2_outlined, color: _isLocked ? _textDim : _accentColor, size: 56),
+          const SizedBox(height: 24),
+          const Text("SOUBORY NAHRÁNY", 
+            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1)),
+          const SizedBox(height: 8),
+          Text(result.summaryLine, style: const TextStyle(color: _textDim, fontSize: 11, fontWeight: FontWeight.bold)),
+          
+          const SizedBox(height: 48),
+          const Text("Zvolte typ zpracování:", style: TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 32),
+
+          Row(
+            children: [
+              Expanded(child: _choiceBtn("ZRUŠIT", _workflow.reset, isCancel: true)),
+              const SizedBox(width: 12),
+              // Po kliknutí na tyto volby se UI díky AbsorbPointeru zamkne a tlačítka zešednou
+              Expanded(child: _choiceBtn("NABÍDKA", () => _workflow.unlockEditor(DocType.offer))),
+              const SizedBox(width: 12),
+              Expanded(child: _choiceBtn("VÝROBA", () => _workflow.unlockEditor(DocType.order), isPrimary: true)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  //  KOMPONENTY (WIDGETY)
+  // ===========================================================================
+
   Widget _buildAnimatedDropCard() {
     return AnimatedBuilder(
-      animation: _controller,
+      animation: _animationController,
       builder: (context, child) {
-        final double glow = _isDragging ? 1.0 : _controller.value;
+        final double glow = _isDragging ? 1.0 : _animationController.value;
         return Container(
           width: 500, height: 320,
           decoration: BoxDecoration(
-            color: _bgCard,
-            borderRadius: BorderRadius.circular(24),
+            color: _isLocked ? Colors.transparent : _bgCard,
+            borderRadius: BorderRadius.circular(32),
             border: Border.all(
-              color: _isDragging ? _dragActiveColor : _accentColor.withOpacity(0.2 + (0.4 * glow)),
+              color: _isDragging ? Colors.greenAccent : _accentColor.withOpacity(0.1 + (0.4 * glow)),
               width: 2,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: (_isDragging ? _dragActiveColor : _accentColor).withOpacity(0.1 * glow),
-                blurRadius: 20 * glow,
-                spreadRadius: 2 * glow,
-              )
-            ],
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                _isDragging ? Icons.file_download_rounded : Icons.cloud_upload_outlined,
-                size: 72,
-                color: _isDragging ? _dragActiveColor : _accentColor,
+                _isDragging ? Icons.file_download_outlined : Icons.cloud_upload_outlined,
+                size: 80,
+                color: _isDragging ? Colors.greenAccent : (_isLocked ? _textDim : _accentColor),
               ),
-              const SizedBox(height: 24),
-              const Text(
-                "DROP ZONE",
-                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 4),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _isDragging ? "PUSTIT PRO ANALÝZU" : "PŘETÁHNĚTE SOUBORY NEBO ARCHIVY",
-                style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 11, fontWeight: FontWeight.bold),
-              ),
+              const SizedBox(height: 32),
+              const Text("PŘETÁHNĚTE DATA", 
+                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 3)),
             ],
           ),
         );
@@ -269,23 +215,55 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
   }
 
   Widget _buildBrowseButton() {
-    return InkWell(
-      onTap: () async {
-        final result = await _service.pickFilesFromDisk();
-        if (result.files.isNotEmpty) {
-          setState(() => _summary = result);
-        }
+    return OutlinedButton.icon(
+      onPressed: _isLocked ? null : () async {
+        final result = await _ingestionService.pickFromDisk();
+        if (result != null) _workflow.handleIngestion(result);
       },
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _accentColor.withOpacity(0.5)),
+      icon: const Icon(Icons.folder_open_rounded, size: 16),
+      label: const Text("VYBRAT SOUBORY Z DISKU", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: _accentColor,
+        side: BorderSide(color: _accentColor.withOpacity(_isLocked ? 0.1 : 0.4)),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _choiceBtn(String label, VoidCallback onTap, {bool isCancel = false, bool isPrimary = false}) {
+    return ElevatedButton(
+      // KLÍČ: Pokud je onPressed null, Flutter tlačítko automaticky deaktivuje a zešedne
+      onPressed: _isLocked ? null : onTap,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isPrimary ? _accentColor : (isCancel ? Colors.transparent : Colors.white10),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        // Barva pro zešednutí (Disabled state)
+        disabledBackgroundColor: Colors.white.withOpacity(0.02),
+        disabledForegroundColor: Colors.white10,
+        padding: const EdgeInsets.symmetric(vertical: 22),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: isCancel ? const BorderSide(color: Colors.white10) : BorderSide.none,
         ),
-        child: const Text(
-          "PROCHÁZET DISK",
-          style: TextStyle(color: _accentColor, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1),
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    return Container(
+      color: Colors.black87,
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(strokeWidth: 3, color: _accentColor),
+            SizedBox(height: 32),
+            Text("BRINGING DATA TO LIFE...", 
+              style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 4)),
+          ],
         ),
       ),
     );
@@ -295,40 +273,22 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _formatChip("TABULKY", Colors.green),
-        const SizedBox(width: 12),
-        _formatChip("VÝKRESY", Colors.red),
-        const SizedBox(width: 12),
-        _formatChip("3D & CAD", Colors.blue),
-        const SizedBox(width: 12),
-        _formatChip("ZIP / RAR", Colors.purpleAccent),
+        _legendItem("TABULKY", Colors.greenAccent),
+        const SizedBox(width: 32),
+        _legendItem("VÝKRESY", Colors.redAccent),
+        const SizedBox(width: 32),
+        _legendItem("CAD / 3D", Colors.blueAccent),
       ],
     );
   }
 
-  Widget _formatChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: _bgCard,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
-        children: [
-          Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 10),
-          Text(label, style: const TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: _bgDeep,
-      child: _summary == null ? _buildDropZone() : _buildSummaryReport(),
+  Widget _legendItem(String label, Color color) {
+    return Row(
+      children: [
+        Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 10),
+        Text(label, style: const TextStyle(color: _textDim, fontSize: 10, fontWeight: FontWeight.bold)),
+      ],
     );
   }
 }

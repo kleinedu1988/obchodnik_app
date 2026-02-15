@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../settings_helpers.dart';
 import '../../../logic/notifications.dart'; 
 
 class GeneralSettingsTab extends StatefulWidget {
@@ -322,7 +321,7 @@ class _GeneralSettingsTabState extends State<GeneralSettingsTab> with SingleTick
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: _blueColor,
+            activeThumbColor: _blueColor,
           ),
         ],
       ),

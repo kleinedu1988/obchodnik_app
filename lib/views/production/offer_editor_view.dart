@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../logic/workflow_controller.dart';
 import '../../logic/notifications.dart';
-import '../../logic/db_service.dart';
 import 'package:path/path.dart' as p;
 
 class OfferEditorView extends StatefulWidget {
@@ -21,7 +19,7 @@ class _OfferEditorViewState extends State<OfferEditorView> {
   // --- STAV EDITORU ---
   final TextEditingController _customerCtrl = TextEditingController();
   final TextEditingController _offerIdCtrl = TextEditingController(text: "NAB-2026-0001");
-  DateTime _selectedDate = DateTime.now();
+  final DateTime _selectedDate = DateTime.now();
   
   // Simulace dat z Ingesce (v reálu přijdou přes WorkflowController nebo Service)
   final List<String> _attachedDrawings = ["vykres_hridel_v1.pdf", "prizma_base.step", "schema_zapojeni.pdf"];

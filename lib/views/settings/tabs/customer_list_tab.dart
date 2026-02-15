@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:file_picker/file_picker.dart';
-import 'package:path/path.dart' as p;
 
 // Importy logiky a UI
 import '../../../logic/db_service.dart';

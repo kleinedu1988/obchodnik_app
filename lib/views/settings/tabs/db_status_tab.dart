@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../logic/db_service.dart';
 import '../../../logic/import_logic.dart';
-import '../settings_helpers.dart';
 
 class DbStatusTab extends StatefulWidget {
   const DbStatusTab({super.key});

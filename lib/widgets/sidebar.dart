@@ -1,44 +1,7 @@
+// lib/ui/widgets/sidebar.dart
+
 import 'package:flutter/material.dart';
-import '../../logic/workflow_controller.dart'; // Ujisti se, že cesta sedí
-
-// =============================================================
-//  MODELY NAVIGACE
-// =============================================================
-
-abstract class NavItem {
-  final int index;
-  final IconData icon;
-  final String label;
-
-  const NavItem({
-    required this.index,
-    required this.icon,
-    required this.label,
-  });
-}
-
-class WorkflowStep extends NavItem {
-  final StepStatus status;
-
-  const WorkflowStep({
-    required super.index,
-    required super.icon,
-    required super.label,
-    required this.status,
-  });
-}
-
-class SystemItem extends NavItem {
-  const SystemItem({
-    required super.index,
-    required super.icon,
-    required super.label,
-  });
-}
-
-// =============================================================
-//  SIDEBAR WIDGET
-// =============================================================
+import '../../logic/workflow_controller.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
@@ -50,103 +13,49 @@ class Sidebar extends StatelessWidget {
     required this.onItemSelected,
   });
 
-  // Design Konstanty
-  static const Color _mainBg = Color(0xFF111111);
-  static const Color _sidebarTop = Color(0xFF161616);
-  static const Color _accentColor = Color(0xFF4077D1); // Tvá modrá
-  static const Color _glassBorder = Color(0x1AFFFFFF);
+  // Barvy designu BRIDGE
+  static const Color _accentColor = Color(0xFF4077D1);
+  static const Color _successColor = Color(0xFF10B981);
+  static const Color _errorColor = Color(0xFFEF4444);
 
   @override
   Widget build(BuildContext context) {
-    // ListenableBuilder sleduje jedinou instanci WorkflowControlleru
     return ListenableBuilder(
       listenable: WorkflowController(),
       builder: (context, _) {
         final state = WorkflowController();
 
-        // 1. Logika downstream zámků (odemkne se po ingesci)
-        final StepStatus downstreamStatus =
-            state.isIngestionDone ? StepStatus.waiting : StepStatus.locked;
-
-        // 2. Dynamické popisky Editoru
-        final String editorLabel = switch (state.docType) {
-          DocType.offer => "Příprava nabídky",
-          DocType.order => "Příprava objednávky",
-          DocType.unknown => "Příprava dokumentu",
-        };
-
-        final IconData editorIcon = switch (state.docType) {
-          DocType.offer => Icons.description_outlined,
-          DocType.order => Icons.shopping_cart_outlined,
-          DocType.unknown => Icons.description_outlined,
-        };
-
-        // --- DEFINICE POLOŽEK ---
-        final itemsInput = [
-          WorkflowStep(
-            index: 0,
-            icon: Icons.move_to_inbox_rounded,
-            label: "Drop Zone (Ingesce)",
-            status: state.isIngestionDone ? StepStatus.done : StepStatus.processing,
-          ),
-        ];
-
-        final itemsEditor = [
-          WorkflowStep(
-            index: 1,
-            icon: editorIcon,
-            label: editorLabel,
-            status: state.isIngestionDone ? StepStatus.processing : StepStatus.locked,
-          ),
-        ];
-
-        final itemsProcessing = [
-          WorkflowStep(index: 2, icon: Icons.link_rounded, label: "Párování výkresů", status: downstreamStatus),
-          WorkflowStep(index: 3, icon: Icons.playlist_add_check_rounded, label: "Validace Operací", status: downstreamStatus),
-          WorkflowStep(index: 4, icon: Icons.output_rounded, label: "Export do CRM", status: downstreamStatus),
-        ];
-
-        final itemsSystem = [
-          const SystemItem(index: 5, icon: Icons.tune_rounded, label: "Mapovací profily"),
-          const SystemItem(index: 6, icon: Icons.settings_outlined, label: "Nastavení"),
-        ];
-
         return Container(
           width: 260,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [_sidebarTop, _mainBg],
-            ),
-            border: const Border(
-              right: BorderSide(color: _glassBorder, width: 1),
-            ),
+          decoration: const BoxDecoration(
+            color: Color(0xFF16181D),
+            border: Border(right: BorderSide(color: Colors.white10, width: 1)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAppHeader(),
-              const SizedBox(height: 20),
+              _buildHeader(),
+              const SizedBox(height: 24),
 
-              _buildSectionTitle("VSTUP DAT"),
-              ...itemsInput.map(_navItemFromModel),
+              _buildSection("VSTUP DAT"),
+              _buildMenuItem(0, Icons.move_to_inbox_rounded, "Drop Zone", state),
 
-              const SizedBox(height: 16),
-              _buildSectionTitle("EDITOR"),
-              ...itemsEditor.map(_navItemFromModel),
+              _buildSection("EDITOR"),
+              _buildMenuItem(1, 
+                state.docType == DocType.offer ? Icons.description_outlined : Icons.shopping_cart_outlined, 
+                state.docType == DocType.offer ? "Příprava nabídky" : "Příprava objednávky", 
+                state),
 
-              const SizedBox(height: 16),
-              _buildSectionTitle("ZPRACOVÁNÍ"),
-              ...itemsProcessing.map(_navItemFromModel),
+              _buildSection("ZPRACOVÁNÍ"),
+              _buildMenuItem(2, Icons.link_rounded, "Párování výkresů", state),
+              _buildMenuItem(3, Icons.verified_user_outlined, "Validace dat", state),
+              _buildMenuItem(4, Icons.output_rounded, "Export do CRM", state),
 
               const Spacer(),
-
-              _buildSectionTitle("SYSTÉM"),
-              ...itemsSystem.map(_navItemFromModel),
-
-              const SizedBox(height: 16),
-              _buildFooter(),
+              _buildSection("SYSTÉM"),
+              _buildMenuItem(5, Icons.tune_rounded, "Mapovací profily", state),
+              _buildMenuItem(6, Icons.settings_outlined, "Nastavení", state),
+              
               const SizedBox(height: 24),
             ],
           ),
@@ -155,74 +64,78 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  // =============================================================
-  //  POMOCNÉ RENDERERY
-  // =============================================================
+  // ===========================================================================
+  //  STAVOVÝ RENDERER POLOŽKY
+  // ===========================================================================
 
-  Widget _navItemFromModel(NavItem item) {
-    return _navItem(
-      item.index,
-      item.icon,
-      item.label,
-      status: (item is WorkflowStep) ? item.status : null,
-    );
-  }
-
-  Widget _navItem(int index, IconData icon, String label, {StepStatus? status}) {
+  Widget _buildMenuItem(int index, IconData icon, String label, WorkflowController workflow) {
+    // Načteme stav konkrétní položky z matrixu v controlleru
+    final itemState = workflow.sidebarStates[index] ?? const SidebarItemState();
+    
     final bool isSelected = selectedIndex == index;
-    final bool isLocked = status == StepStatus.locked;
-    final bool isDone = status == StepStatus.done;
-    final bool isDisabled = isLocked || isDone;
+    final bool isEnabled = itemState.isEnabled;
+    
+    // Určení barvy podle stavu (Neutral / Success / Error)
+    Color statusColor;
+    IconData? statusIcon;
 
-    final bool showStatus = status == StepStatus.processing || status == StepStatus.error;
+    switch (itemState.status) {
+      case ItemStatus.success:
+        statusColor = _successColor;
+        statusIcon = Icons.check_circle_rounded;
+        break;
+      case ItemStatus.error:
+        statusColor = _errorColor;
+        statusIcon = Icons.error_rounded;
+        break;
+      case ItemStatus.neutral:
+        statusColor = isSelected ? _accentColor : Colors.white24;
+        statusIcon = null;
+        break;
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Opacity(
-        // Pokud je hotovo, necháme barvu o něco výraznější než u zamčeného (0.5 vs 0.2)
-        opacity: isLocked ? 0.2 : (isDone ? 0.6 : 1.0),
+        // Vizuální znázornění disabled stavu
+        opacity: isEnabled ? 1.0 : 0.3,
         child: InkWell(
-          // Pokud je zamčeno NEBO hotovo, klikání je vypnuté
-          onTap: isDisabled ? null : () => onItemSelected(index, label),
+          // Pokud je disabled, kliknutí nedělá nic
+          onTap: isEnabled ? () => onItemSelected(index, label) : null,
           borderRadius: BorderRadius.circular(8),
-          hoverColor: isDisabled ? Colors.transparent : Colors.white.withOpacity(0.03),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
+            duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: isSelected ? Colors.white.withOpacity(0.04) : Colors.transparent,
+              color: isSelected ? _accentColor.withOpacity(0.1) : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isSelected ? Colors.white.withOpacity(0.08) : Colors.transparent,
+                color: isSelected ? _accentColor.withOpacity(0.2) : Colors.transparent,
               ),
             ),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  size: 18,
-                  // Změna barvy ikony pro hotový krok
-                  color: isDone ? Colors.greenAccent.withOpacity(0.7) : (isSelected ? _accentColor : Colors.white.withOpacity(0.4)),
-                ),
+                // IKONA POLOŽKY
+                Icon(icon, size: 18, color: isSelected ? _accentColor : Colors.white54),
                 const SizedBox(width: 14),
+                
+                // TEXT POLOŽKY
                 Expanded(
                   child: Text(
                     label,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                      color: isSelected ? Colors.white : Colors.white.withOpacity(0.6),
-                      // Pokud je hotovo, text může být mírně zešedlý
+                      color: isSelected ? Colors.white : Colors.white60,
                     ),
                   ),
                 ),
-                
-                // Pulzující bod pro probíhající krok
-                if (showStatus && status != null) _buildStatusIcon(status),
-                
-                // ZELENÝ CHECK pro hotový krok
-                if (isDone)
-                   const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 14),
+
+                // STAVOVÉ INDIKÁTORY (Vpravo)
+                if (itemState.isProcessing)
+                  const _PulsingIndicator(color: _accentColor)
+                else if (statusIcon != null)
+                  Icon(statusIcon, size: 14, color: statusColor),
               ],
             ),
           ),
@@ -231,111 +144,55 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusIcon(StepStatus status) {
-    if (status == StepStatus.error) {
-      return const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 14);
-    }
-    return const _PulsingDot(color: _accentColor, size: 8);
-  }
+  // --- POMOCNÉ PRVKY ---
 
-  // --- UI KOMPONENTY ---
-
-  Widget _buildAppHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 32, 20, 10),
-      child: Row(
-        children: [
-          Container(
-            height: 30, width: 30,
-            decoration: BoxDecoration(
-              color: _accentColor,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [BoxShadow(color: _accentColor.withOpacity(0.3), blurRadius: 10)],
-            ),
-            child: const Icon(Icons.hub_rounded, color: Colors.white, size: 18),
-          ),
-          const SizedBox(width: 12),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("MRB BRIDGE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1)),
-              Text("DATA PROCESSOR", style: TextStyle(color: Colors.white24, fontSize: 9, fontFamily: 'monospace')),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSection(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 16, 8),
-      child: Text(title, style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+      child: Text(title, style: const TextStyle(color: Colors.white10, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
     );
   }
 
-  Widget _buildFooter() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+  Widget _buildHeader() {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(24, 40, 24, 0),
       child: Row(
         children: [
-          Container(width: 6, height: 6, decoration: const BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle)),
-          const SizedBox(width: 10),
-          Text("ENGINE v0.4.2 READY", style: TextStyle(color: Colors.white.withOpacity(0.15), fontSize: 8, fontWeight: FontWeight.bold)),
+          Icon(Icons.hub_rounded, color: _accentColor, size: 24),
+          SizedBox(width: 12),
+          Text("BRIDGE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
         ],
       ),
     );
   }
 }
 
-// =============================================================
-//  ANIMOVANÝ PULZUJÍCÍ BOD
-// =============================================================
-
-class _PulsingDot extends StatefulWidget {
+// --- ANIMOVANÁ TEČKA ---
+class _PulsingIndicator extends StatefulWidget {
   final Color color;
-  final double size;
-  const _PulsingDot({required this.color, this.size = 10});
+  const _PulsingIndicator({required this.color});
 
   @override
-  State<_PulsingDot> createState() => _PulsingDotState();
+  State<_PulsingIndicator> createState() => _PulsingIndicatorState();
 }
 
-class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
-
+class _PulsingIndicatorState extends State<_PulsingIndicator> with SingleTickerProviderStateMixin {
+  late AnimationController _c;
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000))..repeat(reverse: true);
+    _c = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
   }
-
   @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
+  void dispose() { _c.dispose(); super.dispose(); }
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (_, __) {
-        return Container(
-          width: widget.size, height: widget.size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: widget.color,
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withOpacity(0.2 + (0.4 * _c.value)),
-                blurRadius: 4 + (4 * _c.value),
-                spreadRadius: 1 * _c.value,
-              ),
-            ],
-          ),
-        );
-      },
+    return ScaleTransition(
+      scale: Tween(begin: 0.7, end: 1.2).animate(_c),
+      child: Container(
+        width: 8, height: 8,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color, boxShadow: [BoxShadow(color: widget.color.withOpacity(0.5), blurRadius: 4)]),
+      ),
     );
   }
 }

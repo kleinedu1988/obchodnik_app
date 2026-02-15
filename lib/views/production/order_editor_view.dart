@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../logic/workflow_controller.dart';
 import '../../logic/notifications.dart';
 import 'package:path/path.dart' as p;
 

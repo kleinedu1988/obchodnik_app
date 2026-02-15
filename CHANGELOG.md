@@ -7,6 +7,24 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.4.5] - 2026-02-15
+
+### Přidáno
+- **Sidebar State Matrix**: Implementován systém reaktivních stavů pro navigaci. Každá položka nyní dynamicky mění barvu, ikonu a indikátory (OK / Chyba / Proces) na základě povelů z Workflow.
+- **Security Interaction Lock**: Přidána fyzická ochrana proti nechtěné manipulaci. IngestionView se po výběru režimu (Nabídka/Objednávka) automaticky uzamkne pomocí `AbsorbPointer`.
+- **Session Sandbox Isolation**: IngestionService nyní vytváří unikátní časově razítkované složky pro každou relaci, čímž eliminuje kolize souborů při vícenásobných importech.
+- **Manual File Picker**: Přidána metoda `pickFromDisk` umožňující klasický výběr souborů přes systémové okno jako alternativu k Drag & Drop.
+
+### Změněno
+- **Workflow Centralization**: Logika zámků a stavu "Zaneprázdněn" (isProcessing) byla přesunuta z UI vrstvy přímo do `WorkflowController`.
+- **Sidebar UX**: Položka "Drop Zone" po aktivaci editoru vizuálně zešedne (Disabled State) a zobrazí bezpečnostní zámek, aby nedošlo k přepsání rozpracovaných dat.
+- **Ingestion Reporting**: Notifikační systém nyní inteligentně rozlišuje mezi čistým importem (Zelená) a importem s neznámými soubory (Oranžová - Ignored).
+
+### Opraveno
+- **Editor Dispatcher**: Opraven pád při přepínání režimů a zajištěn korektní globální reset aplikace (vyčištění paměti a sandboxu).
+- **Navigation Sync**: Opraven nesoulad mezi stavem Sidebar položek a aktivním zobrazením v AppShellu.
+- **Async Safety**: Ošetřeno volání notifikací po dokončení asynchronních operací (mounted check).
+
 ## [0.4.4] - 2026-02-14
 
 ### Přidáno
