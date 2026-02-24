@@ -1,7 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:mrb_obchodnik/logic/notifications.dart';
-import 'package:mrb_obchodnik/logic/workflow_controller.dart';
 import 'package:mrb_obchodnik/views/settings/settings_helpers.dart';
+
+/// Model pro jeden mapovací profil
+class MappingProfile {
+  String id;
+  String name;
+  bool isDefault;
+  Map<String, String> mappings; // Key: SystemField, Value: ExcelHeaderKeywords
+
+  MappingProfile({
+    required this.id,
+    required this.name,
+    this.isDefault = false,
+    required this.mappings,
+  });
+}
 
 class MappingProfilesView extends StatefulWidget {
   const MappingProfilesView({super.key});
@@ -27,6 +41,35 @@ class _MappingProfilesViewState extends State<MappingProfilesView> {
     {'key': 'dims', 'label': 'ROZMĚRY', 'desc': 'Formát (1000x2000, atd.)'},
   ];
 
+  // --- STAV ---
+  // Mock data - v reálu by se načítala z DB/SharedPreferences
+  final List<MappingProfile> _profiles = [
+    MappingProfile(
+      id: '1',
+      name: 'Standardní Import (Default)',
+      isDefault: true,
+      mappings: {
+        'pos': 'poz, pozice, č.',
+        'name': 'název, popis, description',
+        'qty': 'ks, počet, mn., qty',
+        'material': 'materiál, mat, jakost',
+        'thickness': 'tl, tl., tloušťka',
+      },
+    ),
+    MappingProfile(
+      id: '2',
+      name: 'Export SAP (Německo)',
+      isDefault: false,
+      mappings: {
+        'pos': 'pos, position',
+        'name': 'benennung, name',
+        'qty': 'menge, anzahl',
+        'material': 'werkstoff',
+        'thickness': 'dicke',
+      },
+    ),
+  ];
+
   String? _selectedProfileId;
   late TextEditingController _nameController;
   final Map<String, TextEditingController> _mappingControllers = {};
@@ -34,12 +77,9 @@ class _MappingProfilesViewState extends State<MappingProfilesView> {
   @override
   void initState() {
     super.initState();
+    _selectedProfileId = _profiles.first.id;
     _nameController = TextEditingController();
-    
-    final profiles = WorkflowController().profiles;
-    if (profiles.isNotEmpty) {
-      _selectProfile(profiles.firstWhere((p) => p.isDefault, orElse: () => profiles.first).id);
-    }
+    _loadProfileToControllers(_profiles.first);
   }
 
   void _loadProfileToControllers(MappingProfile profile) {
@@ -60,26 +100,22 @@ class _MappingProfilesViewState extends State<MappingProfilesView> {
   void _selectProfile(String id) {
     setState(() {
       _selectedProfileId = id;
-      final profile = WorkflowController().profiles.firstWhere((p) => p.id == id);
+      final profile = _profiles.firstWhere((p) => p.id == id);
       _loadProfileToControllers(profile);
     });
   }
 
   void _saveCurrentProfile() {
-    final profiles = WorkflowController().profiles;
-    final originalProfile = profiles.firstWhere((p) => p.id == _selectedProfileId);
-
-    final updatedProfile = MappingProfile(
-      id: originalProfile.id,
-      name: _nameController.text,
-      isDefault: originalProfile.isDefault,
-      mappings: Map.fromEntries(_mappingControllers.entries.map((e) => MapEntry(e.key, e.value.text))),
-    );
-
-    WorkflowController().saveProfile(updatedProfile);
-    setState(() {}); // Refresh UI
-    
-    Notifications.showSuccess(context, "PROFIL ULOŽEN");
+    final profileIndex = _profiles.indexWhere((p) => p.id == _selectedProfileId);
+    if (profileIndex != -1) {
+      setState(() {
+        _profiles[profileIndex].name = _nameController.text;
+        for (var entry in _mappingControllers.entries) {
+          _profiles[profileIndex].mappings[entry.key] = entry.value.text;
+        }
+      });
+      Notifications.showSuccess(context, "PROFIL ULOŽEN");
+    }
   }
 
   void _createNewProfile() {
@@ -90,45 +126,26 @@ class _MappingProfilesViewState extends State<MappingProfilesView> {
       mappings: {},
     );
     setState(() {
-      WorkflowController().addProfile(newProfile);
+      _profiles.add(newProfile);
       _selectProfile(newId);
     });
   }
 
   void _deleteCurrentProfile() {
-    final profiles = WorkflowController().profiles;
-    if (profiles.length <= 1) {
+    if (_profiles.length <= 1) {
       Notifications.showError(context, "NEMOHU SMAZAT POSLEDNÍ PROFIL");
       return;
     }
     setState(() {
-      WorkflowController().deleteProfile(_selectedProfileId!);
-      _selectProfile(WorkflowController().profiles.first.id);
+      _profiles.removeWhere((p) => p.id == _selectedProfileId);
+      _selectProfile(_profiles.first.id);
     });
     Notifications.showWarning(context, "PROFIL ODSTRANĚN");
   }
 
-  void _setAsDefault(MappingProfile profile) {
-    profile.isDefault = true;
-    WorkflowController().saveProfile(profile);
-    setState(() {});
-    Notifications.showSuccess(context, "NASTAVENO JAKO VÝCHOZÍ");
-  }
-
   @override
   Widget build(BuildContext context) {
-    final profiles = WorkflowController().profiles;
-    
-    // Safety check
-    if (!profiles.any((p) => p.id == _selectedProfileId)) {
-      if (profiles.isNotEmpty) {
-        _selectedProfileId = profiles.first.id;
-      } else {
-        return const Center(child: Text("Žádné profily"));
-      }
-    }
-    
-    final activeProfile = profiles.firstWhere((p) => p.id == _selectedProfileId);
+    final activeProfile = _profiles.firstWhere((p) => p.id == _selectedProfileId);
 
     return Scaffold(
       backgroundColor: _bgEditor,
@@ -143,10 +160,10 @@ class _MappingProfilesViewState extends State<MappingProfilesView> {
                 _buildSidebarHeader(),
                 Expanded(
                   child: ListView.builder(
-                    itemCount: profiles.length,
+                    itemCount: _profiles.length,
                     padding: const EdgeInsets.all(12),
                     itemBuilder: (context, index) {
-                      final p = profiles[index];
+                      final p = _profiles[index];
                       final isSelected = p.id == _selectedProfileId;
                       return _buildProfileTile(p, isSelected);
                     },
@@ -287,18 +304,12 @@ class _MappingProfilesViewState extends State<MappingProfilesView> {
             icon: const Icon(Icons.save_rounded, color: _accentColor),
             tooltip: "Uložit změny",
           ),
-          if (!profile.isDefault) ...[
-            IconButton(
-              onPressed: () => _setAsDefault(profile),
-              icon: const Icon(Icons.star_outline_rounded, color: Colors.amber),
-              tooltip: "Nastavit jako výchozí",
-            ),
+          if (!profile.isDefault)
             IconButton(
               onPressed: _deleteCurrentProfile,
               icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
               tooltip: "Smazat profil",
             ),
-          ]
         ],
       ),
     );

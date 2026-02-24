@@ -7,6 +7,20 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.4.6] - 2026-02-24
+
+### Přidáno
+- **Smart Header Candidates**: Průvodce importem nyní automaticky nabízí "Top 3" nejpravděpodobnější řádky s hlavičkou včetně procentuální shody.
+- **Visual Heatmap**: Řádky v tabulce ověření struktury jsou barevně podbarveny (Zelená/Oranžová) podle míry shody s klíčovými slovy.
+- **Mapping Profiles**: Nový konfigurační modul umožňující definovat vlastní sady klíčových slov pro detekci sloupců (např. pro různé jazykové mutace nebo exporty ze SAP).
+- **Ghosting Effect**: Řádky nad vybranou hlavičkou jsou nyní vizuálně potlačeny (poloprůhledné), aby bylo zřejmé, že jde o ignorovaná metadata.
+- **Auto-Scroll**: Automatický posun tabulky na nejlepší nalezený řádek při otevření wizardu.
+
+### Změněno
+- **Detection Logic**: Detektor hlaviček nyní počítá normalizované skóre důvěryhodnosti (Confidence Score) a přijímá dynamická klíčová slova z aktivního profilu.
+- **Workflow Controller**: Integrována správa mapovacích profilů přímo do logiky analýzy souborů.
+- **Ingestion UI**: Přepracován wizard pro ověření struktury – přidány čipy pro rychlý výběr kandidátů a vertikální scroll controller.
+
 ## [0.4.5] - 2026-02-15
 
 ### Přidáno
