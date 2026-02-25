@@ -7,6 +7,16 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.5.0] - 2026-02-25
+
+#### Přidáno
+- **Interaktivní Dropzone pro dokumentaci**: Spodní lišta v editorech nabídek a objednávek nyní plně podporuje Drag & Drop. Při přetažení souboru se animovaně rozbalí.
+- **Správa souborů**: K souborům v dokumentační liště přidán hover efekt s možností rychlého smazání souboru.
+
+#### Změněno
+- **Sjednocení UI Editorů (Data Grid)**: Kompletní redesign `OrderEditorView` a `OfferEditorView`. Seznam položek k výrobě nyní využívá stejný celostránkový tabulkový vzor (Data Grid) jako Pipeline, Operace a Materiály.
+- **Optimalizace Layoutu Editorů**: Rozložení obrazovek upraveno do tří vrstev: 1. kompaktní hlavička (formulář a souhrn se stejnou výškou díky `IntrinsicHeight`), 2. full-width tabulka položek, 3. fixní spodní lišta pro dokumentaci.
+
 ## [0.4.9] - 2026-02-25
 
 #### Přidáno
