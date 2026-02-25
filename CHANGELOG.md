@@ -7,6 +7,20 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.5.2] - 2026-02-25
+
+#### Změněno
+- **Redesign tabulky Editor Objednávek**: Kompletní přepracování řádků položek v `OrderEditorView`. Barevné odznaky typů souborů (PDF/DXF/STEP/IMG) nahrazeny neutrálními bílými ikonami s Tooltipem. Výchozí pozadí řádku je průhledné, při hover se jemně podbarvuje (white/2 %) – shodně s tabulkami Materiály, Operace a Pipeline.
+- **Redesign tabulky Editor Nabídek**: Stejné úpravy aplikovány do `OfferEditorView`. Odstraněny barevné chipy pro Materiál (oranžová) a Operace (fialová), nahrazeny neutrálním bílým textem a stylem. Logika hover stavu extrahována do samostatného `_OfferTableRow` StatefulWidget.
+- **Červené podbarvení řádku při mazání**: V obou editorech (nabídky i objednávky) se řádek jemně červeně podbarvuje (`redAccent/6 %`) při najetí myší na tlačítko Smazat, čímž vizuálně signalizuje destruktivní akci.
+- **Kompaktnější Dropzone**: Výška spodní dokumentační lišty v editorech snížena (padding `vertical: 28 → 14` ve sbaleném stavu). Přidán vertikální mezera 16 px mezi tabulkou položek a Dropzone pro lepší vizuální oddělení.
+- **Sjednocení oddělovačů**: Řádky tabulky objednávek a nabídek nyní používají plno-šířkové `Divider` shodné s ostatními tabulkami v aplikaci. Odstraněny zaoblené rohy z dekorace řádků.
+- **Oprava přetékání IconButton**: Tlačítka Upravit a Smazat v editorech nyní mají `constraints: const BoxConstraints()` a kompaktní `padding: EdgeInsets.all(6)`, čímž se eliminuje min. výška 48 px a zamezuje přetečení v pevně daných `SizedBox` kontejnerech.
+
+#### Opraveno
+- **Přetékání Header Wizardu (IngestionView)**: Řádek s doporučenými hlavičkovými řádky ("DOPORUČENÉ ŘÁDKY") přepnut z `Row` na `Wrap` – při větším počtu kandidátů se chipy zalamují místo přetečení mimo obrazovku.
+- **Deprecated `withOpacity()` (IngestionView)**: Všechna volání `.withOpacity()` v `ingestion_view.dart` nahrazena moderním `.withValues(alpha:)` (18 výskytů), včetně dynamických výrazů s animovanými hodnotami.
+
 ## [0.5.1] - 2026-02-25
 
 #### Přidáno

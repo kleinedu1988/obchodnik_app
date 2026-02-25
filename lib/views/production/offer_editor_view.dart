@@ -11,13 +11,11 @@ class OfferEditorView extends StatefulWidget {
 }
 
 class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProviderStateMixin {
-  // --- DESIGN KONSTANTY (sjednoceno s OrderEditorView / Pipeline / Materiály / Operace) ---
+  // --- DESIGN KONSTANTY ---
   static const Color _bgCard = Color(0xFF16181D);
   static const Color _accentColor = Color(0xFF4077D1);
   static const Color _borderColor = Color(0xFF2A2D35);
   static const Color _textDim = Colors.white54;
-  static const Color _matColor = Color(0xFFFF9F1C);
-  static const Color _opColor = Color(0xFFE056FD);
 
   // --- STAV ---
   final TextEditingController _offerIdCtrl = TextEditingController(text: "NAB-2026-0001");
@@ -117,6 +115,7 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
           ),
 
           // 5) DOKUMENTACE – DROPZONE
+          const SizedBox(height: 16),
           _buildDocumentationDropzone(),
           const SizedBox(height: 24),
         ],
@@ -274,58 +273,14 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
   // =========================================================================
 
   Widget _buildItemRow(_OfferItem item) {
-    return InkWell(
-      onTap: () {},
-      hoverColor: Colors.white.withOpacity(0.02),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 4,
-              child: Text(item.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-            Expanded(
-              flex: 2,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: _matColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4), border: Border.all(color: _matColor.withOpacity(0.3))),
-                  child: Text(item.material, style: const TextStyle(color: _matColor, fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-            ),
-            Expanded(flex: 1, child: Text("${item.qty} ks", style: const TextStyle(fontSize: 12, color: Colors.white54, fontWeight: FontWeight.w500))),
-            Expanded(
-              flex: 2,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: _opColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4), border: Border.all(color: _opColor.withOpacity(0.3))),
-                  child: Text(item.operations, style: const TextStyle(color: _opColor, fontSize: 11, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 80,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(onPressed: () {}, icon: const Icon(Icons.edit_note_rounded, size: 18), color: Colors.white24, tooltip: "Upravit položku", hoverColor: Colors.white10),
-                  IconButton(onPressed: () {}, icon: const Icon(Icons.delete_outline_rounded, size: 18), color: Colors.redAccent.withOpacity(0.5), tooltip: "Odebrat položku", hoverColor: Colors.redAccent.withOpacity(0.1)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return _OfferTableRow(
+      item: item,
+      onDelete: () => setState(() => _items.remove(item)),
     );
   }
 
   // =========================================================================
-  //  DROPZONE: DOKUMENTACE Z INGESCE (DESKTOP DROP)
+  //  DROPZONE: DOKUMENTACE (DESKTOP DROP)
   // =========================================================================
 
   Widget _buildDocumentationDropzone() {
@@ -360,7 +315,7 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
         width: double.infinity,
         padding: EdgeInsets.symmetric(
           horizontal: 24,
-          vertical: _isDragOver ? 48 : 28,
+          vertical: _isDragOver ? 32 : 14,
         ),
         decoration: BoxDecoration(
           color: _isDragOver ? _accentColor.withOpacity(0.06) : _bgCard,
@@ -379,7 +334,6 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. KOMPAKTNÍ LEVÝ BLOK (Ikona a text)
         const Padding(
           padding: EdgeInsets.only(top: 2),
           child: Column(
@@ -391,12 +345,10 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
             ],
           ),
         ),
-        
         const SizedBox(width: 16),
         Container(width: 1, height: 36, color: _borderColor),
         const SizedBox(width: 16),
 
-        // 2. SCROLLOVATELNÝ MULTI-LINE WRAP PRO SOUBORY
         Expanded(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 70),
@@ -426,7 +378,6 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
         Container(width: 1, height: 36, color: _borderColor),
         const SizedBox(width: 16),
 
-        // 3. KOMPAKTNÍ PRAVÝ BLOK (Nápověda + Počet souborů)
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Row(
@@ -479,7 +430,6 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
               const SizedBox(height: 16),
               Divider(color: _accentColor.withOpacity(0.1), height: 1),
               const SizedBox(height: 12),
-              
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 120),
                 child: Scrollbar(
@@ -577,6 +527,115 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
           const SizedBox(height: 16),
           Text("Žádné položky nabídky", style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 13)),
         ],
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+//  ŘÁDEK NABÍDKY
+// ===========================================================================
+
+class _OfferTableRow extends StatefulWidget {
+  final _OfferItem item;
+  final VoidCallback onDelete;
+
+  const _OfferTableRow({required this.item, required this.onDelete});
+
+  @override
+  State<_OfferTableRow> createState() => _OfferTableRowState();
+}
+
+class _OfferTableRowState extends State<_OfferTableRow> {
+  bool _isHovered = false;
+  bool _isDeleteHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          color: _isDeleteHovered
+              ? Colors.redAccent.withValues(alpha: 0.06)
+              : _isHovered ? Colors.white.withValues(alpha: 0.02) : Colors.transparent,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            // 1. NÁZEV
+            Expanded(
+              flex: 4,
+              child: Text(widget.item.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            // 2. MATERIÁL
+            Expanded(
+              flex: 2,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: Text(widget.item.material, style: const TextStyle(color: Colors.white60, fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'monospace'), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ),
+            // 3. MNOŽSTVÍ
+            Expanded(
+              flex: 1,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(widget.item.qty, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                  const SizedBox(width: 4),
+                  const Text("ks", style: TextStyle(fontSize: 11, color: Colors.white30)),
+                ],
+              ),
+            ),
+            // 4. OPERACE
+            Expanded(
+              flex: 2,
+              child: Text(widget.item.operations, style: const TextStyle(color: Colors.white38, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            // 5. AKCE
+            SizedBox(
+              width: 80,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    onPressed: () {},
+                    icon: const Icon(Icons.edit_note_rounded, size: 18),
+                    color: Colors.white24,
+                    tooltip: "Upravit položku",
+                    hoverColor: Colors.white10,
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
+                  ),
+                  MouseRegion(
+                    onEnter: (_) => setState(() => _isDeleteHovered = true),
+                    onExit: (_) => setState(() => _isDeleteHovered = false),
+                    child: IconButton(
+                      onPressed: widget.onDelete,
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                      color: _isDeleteHovered ? Colors.redAccent : Colors.redAccent.withValues(alpha: 0.5),
+                      tooltip: "Odebrat položku",
+                      hoverColor: Colors.redAccent.withValues(alpha: 0.12),
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

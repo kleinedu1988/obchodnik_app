@@ -222,8 +222,8 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
       decoration: BoxDecoration(
         color: _bgCard,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _accentColor.withOpacity(0.5), width: 1),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 60)],
+        border: Border.all(color: _accentColor.withValues(alpha: 0.5), width: 1),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 60)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -233,7 +233,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: _accentColor.withOpacity(0.1), shape: BoxShape.circle),
+                decoration: BoxDecoration(color: _accentColor.withValues(alpha: 0.1), shape: BoxShape.circle),
                 child: const Icon(Icons.table_chart_outlined, color: _accentColor, size: 28),
               ),
               const SizedBox(width: 16),
@@ -255,27 +255,26 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
           if (topCandidates.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
-              child: Row(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text("DOPORUČENÉ ŘÁDKY:", style: TextStyle(color: _textDim, fontSize: 10, fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 12),
                   ...topCandidates.map((idx) {
                     final conf = res.getConfidence(idx);
                     final pct = (conf * 100).round();
                     final isSelected = res.headerRowIndex == idx;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ActionChip(
-                        label: Text("Řádek ${idx + 1} ($pct%)"),
-                        backgroundColor: isSelected ? _accentColor : _bgDeep,
-                        side: BorderSide(color: _getColorForConfidence(conf).withOpacity(0.5)),
-                        labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                        onPressed: () {
-                          _workflow.manualHeaderAdjust(idx);
-                          _scrollToRow(idx);
-                        },
-                      ),
+                    return ActionChip(
+                      label: Text("Řádek ${idx + 1} ($pct%)"),
+                      backgroundColor: isSelected ? _accentColor : _bgDeep,
+                      side: BorderSide(color: _getColorForConfidence(conf).withValues(alpha: 0.5)),
+                      labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                      onPressed: () {
+                        _workflow.manualHeaderAdjust(idx);
+                        _scrollToRow(idx);
+                      },
                     );
                   }),
                 ],
@@ -325,11 +324,11 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                                 // Pokud je vybráno -> Modrá
                                 // Pokud není vybráno, ale má shodu -> Jemný nádech barvy shody
                                 color: isSelected 
-                                    ? _accentColor.withOpacity(0.15) 
-                                    : (confidence > 0.2 ? rowColor.withOpacity(0.05) : Colors.transparent),
+                                    ? _accentColor.withValues(alpha: 0.15) 
+                                    : (confidence > 0.2 ? rowColor.withValues(alpha: 0.05) : Colors.transparent),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: isSelected ? _accentColor : rowColor.withOpacity(confidence > 0.4 ? 0.4 : 0.0),
+                                  color: isSelected ? _accentColor : rowColor.withValues(alpha: confidence > 0.4 ? 0.4 : 0.0),
                                   width: isSelected ? 2 : 1,
                                 ),
                               ),
@@ -462,10 +461,10 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: isHeader ? _bgCard : Colors.white.withOpacity(0.05),
+        color: isHeader ? _bgCard : Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(4),
         // Ikonka merge nám stačí jako indikátor, rámeček není nutný
-        border: isMerged ? Border.all(color: _accentColor.withOpacity(0.3)) : null,
+        border: isMerged ? Border.all(color: _accentColor.withValues(alpha: 0.3)) : null,
       ),
       alignment: Alignment.centerLeft,
       child: Row(
@@ -507,8 +506,8 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
       decoration: BoxDecoration(
         color: _bgCard,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _accentColor.withOpacity(0.3), width: 1),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 60)],
+        border: Border.all(color: _accentColor.withValues(alpha: 0.3), width: 1),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.6), blurRadius: 60)],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -519,7 +518,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: _accentColor.withOpacity(0.1), shape: BoxShape.circle),
+                decoration: BoxDecoration(color: _accentColor.withValues(alpha: 0.1), shape: BoxShape.circle),
                 child: const Icon(Icons.business_outlined, color: _accentColor, size: 28),
               ),
               const SizedBox(width: 16),
@@ -695,7 +694,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
               duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: isSelected ? _accentColor.withOpacity(0.12) : Colors.transparent,
+                color: isSelected ? _accentColor.withValues(alpha: 0.12) : Colors.transparent,
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Row(
@@ -758,7 +757,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
         color: _bgCard,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: _borderColor),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 40)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 40)],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -803,7 +802,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
             color: _isLocked ? Colors.transparent : _bgCard,
             borderRadius: BorderRadius.circular(32),
             border: Border.all(
-              color: _isDragging ? Colors.greenAccent : _accentColor.withOpacity(0.1 + (0.4 * glow)),
+              color: _isDragging ? Colors.greenAccent : _accentColor.withValues(alpha: 0.1 + (0.4 * glow)),
               width: 2,
             ),
           ),
@@ -835,7 +834,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
       label: const Text("VYBRAT SOUBORY Z DISKU", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
       style: OutlinedButton.styleFrom(
         foregroundColor: _accentColor,
-        side: BorderSide(color: _accentColor.withOpacity(_isLocked ? 0.1 : 0.4)),
+        side: BorderSide(color: _accentColor.withValues(alpha: _isLocked ? 0.1 : 0.4)),
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -851,7 +850,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
         backgroundColor: bgColor,
         foregroundColor: Colors.white,
         elevation: 0,
-        disabledBackgroundColor: Colors.white.withOpacity(0.02),
+        disabledBackgroundColor: Colors.white.withValues(alpha: 0.02),
         disabledForegroundColor: Colors.white10,
         padding: const EdgeInsets.symmetric(vertical: 22),
         shape: RoundedRectangleBorder(
@@ -865,7 +864,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
 
   Widget _buildLoadingOverlay() {
     return Container(
-      color: Colors.black.withOpacity(0.7),
+      color: Colors.black.withValues(alpha: 0.7),
       child: const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
