@@ -1,377 +1,126 @@
 import 'package:flutter/material.dart';
-import 'package:mrb_obchodnik/logic/notifications.dart';
-import 'package:mrb_obchodnik/logic/workflow_controller.dart';
-import 'package:mrb_obchodnik/views/settings/settings_helpers.dart';
 
-class MappingProfilesView extends StatefulWidget {
+import 'tabs/profiles_editor_tab.dart';
+import 'tabs/customer_profiles_tab.dart';
+import 'tabs/import_test_tab.dart';
+
+class MappingProfilesView extends StatelessWidget {
   const MappingProfilesView({super.key});
 
-  @override
-  State<MappingProfilesView> createState() => _MappingProfilesViewState();
-}
-
-class _MappingProfilesViewState extends State<MappingProfilesView> {
-  // --- KONSTANTY DESIGNU ---
-  static const Color _bgSidebar = Color(0xFF121418);
-  static const Color _bgEditor = Color(0xFF0F1115);
   static const Color _accentColor = Color(0xFF4077D1);
-  static const Color _borderColor = Color(0xFF2A2D35);
-
-  // --- SYSTÉMOVÁ POLE (Cílová data) ---
-  final List<Map<String, String>> _systemFields = [
-    {'key': 'pos', 'label': 'POZICE', 'desc': 'Číslo pozice v sestavě'},
-    {'key': 'name', 'label': 'NÁZEV DÍLU', 'desc': 'Hlavní identifikátor dílu'},
-    {'key': 'qty', 'label': 'MNOŽSTVÍ', 'desc': 'Počet kusů (ks, qty)'},
-    {'key': 'material', 'label': 'MATERIÁL', 'desc': 'Kvalita materiálu (S235, 1.4301...)'},
-    {'key': 'thickness', 'label': 'TLOUŠŤKA', 'desc': 'Tloušťka plechu v mm'},
-    {'key': 'dims', 'label': 'ROZMĚRY', 'desc': 'Formát (1000x2000, atd.)'},
-  ];
-
-  String? _selectedProfileId;
-  late TextEditingController _nameController;
-  final Map<String, TextEditingController> _mappingControllers = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController();
-    
-    final profiles = WorkflowController().profiles;
-    if (profiles.isNotEmpty) {
-      _selectProfile(profiles.firstWhere((p) => p.isDefault, orElse: () => profiles.first).id);
-    }
-  }
-
-  void _loadProfileToControllers(MappingProfile profile) {
-    _nameController.text = profile.name;
-    
-    // Vyčistit a naplnit controllery pro mapování
-    for (var field in _systemFields) {
-      final key = field['key']!;
-      final val = profile.mappings[key] ?? "";
-      
-      if (!_mappingControllers.containsKey(key)) {
-        _mappingControllers[key] = TextEditingController();
-      }
-      _mappingControllers[key]!.text = val;
-    }
-  }
-
-  void _selectProfile(String id) {
-    setState(() {
-      _selectedProfileId = id;
-      final profile = WorkflowController().profiles.firstWhere((p) => p.id == id);
-      _loadProfileToControllers(profile);
-    });
-  }
-
-  void _saveCurrentProfile() {
-    final profiles = WorkflowController().profiles;
-    final originalProfile = profiles.firstWhere((p) => p.id == _selectedProfileId);
-
-    final updatedProfile = MappingProfile(
-      id: originalProfile.id,
-      name: _nameController.text,
-      isDefault: originalProfile.isDefault,
-      mappings: Map.fromEntries(_mappingControllers.entries.map((e) => MapEntry(e.key, e.value.text))),
-    );
-
-    WorkflowController().saveProfile(updatedProfile);
-    setState(() {}); // Refresh UI
-    
-    Notifications.showSuccess(context, "PROFIL ULOŽEN");
-  }
-
-  void _createNewProfile() {
-    final newId = DateTime.now().millisecondsSinceEpoch.toString();
-    final newProfile = MappingProfile(
-      id: newId,
-      name: "Nový Profil",
-      mappings: {},
-    );
-    setState(() {
-      WorkflowController().addProfile(newProfile);
-      _selectProfile(newId);
-    });
-  }
-
-  void _deleteCurrentProfile() {
-    final profiles = WorkflowController().profiles;
-    if (profiles.length <= 1) {
-      Notifications.showError(context, "NEMOHU SMAZAT POSLEDNÍ PROFIL");
-      return;
-    }
-    setState(() {
-      WorkflowController().deleteProfile(_selectedProfileId!);
-      _selectProfile(WorkflowController().profiles.first.id);
-    });
-    Notifications.showWarning(context, "PROFIL ODSTRANĚN");
-  }
-
-  void _setAsDefault(MappingProfile profile) {
-    profile.isDefault = true;
-    WorkflowController().saveProfile(profile);
-    setState(() {});
-    Notifications.showSuccess(context, "NASTAVENO JAKO VÝCHOZÍ");
-  }
+  static const Color _glassBorder = Color(0x14FFFFFF);
 
   @override
   Widget build(BuildContext context) {
-    final profiles = WorkflowController().profiles;
-    
-    // Safety check
-    if (!profiles.any((p) => p.id == _selectedProfileId)) {
-      if (profiles.isNotEmpty) {
-        _selectedProfileId = profiles.first.id;
-      } else {
-        return const Center(child: Text("Žádné profily"));
-      }
-    }
-    
-    final activeProfile = profiles.firstWhere((p) => p.id == _selectedProfileId);
+    return DefaultTabController(
+      length: 3,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 24),
 
-    return Scaffold(
-      backgroundColor: _bgEditor,
-      body: Row(
-        children: [
-          // --- LEVÝ PANEL (SEZNAM) ---
-          Container(
-            width: 280,
-            color: _bgSidebar,
-            child: Column(
+            // HLAVIČKA
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
               children: [
-                _buildSidebarHeader(),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: profiles.length,
-                    padding: const EdgeInsets.all(12),
-                    itemBuilder: (context, index) {
-                      final p = profiles[index];
-                      final isSelected = p.id == _selectedProfileId;
-                      return _buildProfileTile(p, isSelected);
-                    },
+                const Text(
+                  "Mapovací profily",
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                    color: Colors.white,
                   ),
                 ),
-                _buildAddButton(),
+                const SizedBox(width: 12),
+                Text(
+                  "/  SPRÁVA ŠABLON PRO ROZPOZNÁVÁNÍ",
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.15),
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                  ),
+                ),
               ],
             ),
-          ),
 
-          // --- PRAVÝ PANEL (EDITOR) ---
-          Expanded(
-            child: Column(
+            const SizedBox(height: 16),
+
+            // TAB BAR
+            Stack(
+              alignment: Alignment.bottomLeft,
               children: [
-                _buildEditorHeader(activeProfile),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(30),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SettingsHelpers.headerText("DEFINICE MAPOVÁNÍ SLOUPCŮ"),
-                        const SizedBox(height: 10),
-                        SettingsHelpers.buildGlassPanel(
-                          child: Column(
-                            children: _systemFields.map((field) {
-                              final isLast = field == _systemFields.last;
-                              return _buildMappingRow(field, isLast);
-                            }).toList(),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        const Text(
-                          "* Zadejte názvy sloupců v Excelu oddělené čárkou. Systém bude hledat shodu v tomto pořadí.",
-                          style: TextStyle(color: Colors.white24, fontSize: 11),
-                        ),
-                      ],
+                Container(
+                  height: 1,
+                  width: double.infinity,
+                  color: _glassBorder,
+                ),
+                TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  indicatorColor: _accentColor,
+                  indicatorWeight: 2,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  dividerColor: Colors.transparent,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white.withOpacity(0.15),
+                  labelPadding: const EdgeInsets.only(right: 32, bottom: 10),
+                  labelStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overlayColor: WidgetStateProperty.all(Colors.transparent),
+                  tabs: const [
+                    Tab(
+                      child: Row(
+                        children: [
+                          Icon(Icons.tune_rounded, size: 14),
+                          SizedBox(width: 8),
+                          Text("Mapování sloupců"),
+                        ],
+                      ),
                     ),
-                  ),
+                    Tab(
+                      child: Row(
+                        children: [
+                          Icon(Icons.business_outlined, size: 14),
+                          SizedBox(width: 8),
+                          Text("Rozpoznávání zákazníků"),
+                        ],
+                      ),
+                    ),
+                    Tab(
+                      child: Row(
+                        children: [
+                          Icon(Icons.science_outlined, size: 14),
+                          SizedBox(width: 8),
+                          Text("Test importu"),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  // --- WIDGETY: SIDEBAR ---
-
-  Widget _buildSidebarHeader() {
-    return Container(
-      height: 60,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: _borderColor)),
-      ),
-      child: const Text(
-        "PROFILY",
-        style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-      ),
-    );
-  }
-
-  Widget _buildProfileTile(MappingProfile p, bool isSelected) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: isSelected ? _accentColor.withOpacity(0.1) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isSelected ? _accentColor.withOpacity(0.5) : Colors.transparent,
-        ),
-      ),
-      child: ListTile(
-        onTap: () => _selectProfile(p.id),
-        dense: true,
-        title: Text(
-          p.name,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            fontSize: 13,
-          ),
-        ),
-        trailing: p.isDefault 
-            ? const Icon(Icons.star_rounded, size: 14, color: Colors.amber) 
-            : null,
-      ),
-    );
-  }
-
-  Widget _buildAddButton() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: _createNewProfile,
-          icon: const Icon(Icons.add, size: 16),
-          label: const Text("NOVÝ PROFIL"),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.white70,
-            side: const BorderSide(color: Colors.white12),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // --- WIDGETY: EDITOR ---
-
-  Widget _buildEditorHeader(MappingProfile profile) {
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 30),
-      decoration: const BoxDecoration(
-        color: _bgSidebar,
-        border: Border(bottom: BorderSide(color: _borderColor)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _nameController,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintText: "Název profilu",
-                hintStyle: TextStyle(color: Colors.white24),
+            // OBSAH
+            const Expanded(
+              child: TabBarView(
+                physics: NeverScrollableScrollPhysics(),
+                children: [
+                  ProfilesEditorTab(),
+                  CustomerProfilesTab(),
+                  ImportTestTab(),
+                ],
               ),
             ),
-          ),
-          IconButton(
-            onPressed: _saveCurrentProfile,
-            icon: const Icon(Icons.save_rounded, color: _accentColor),
-            tooltip: "Uložit změny",
-          ),
-          if (!profile.isDefault) ...[
-            IconButton(
-              onPressed: () => _setAsDefault(profile),
-              icon: const Icon(Icons.star_outline_rounded, color: Colors.amber),
-              tooltip: "Nastavit jako výchozí",
-            ),
-            IconButton(
-              onPressed: _deleteCurrentProfile,
-              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              tooltip: "Smazat profil",
-            ),
-          ]
-        ],
+          ],
+        ),
       ),
     );
-  }
-
-  Widget _buildMappingRow(Map<String, String> field, bool isLast) {
-    final key = field['key']!;
-    return SettingsHelpers.buildDataRow(
-      field['label']!, // Label (vlevo)
-      "", // Value (nepoužíváme standardní text, ale input)
-      isLast: isLast,
-    ).copyWith(
-      // Hack: Přepíšeme child buildDataRow, abychom vložili TextField
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  field['label']!,
-                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  field['desc']!,
-                  style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 9),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 20),
-          const Icon(Icons.arrow_right_alt_rounded, color: Colors.white12),
-          const SizedBox(width: 20),
-          Expanded(
-            child: TextField(
-              controller: _mappingControllers[key],
-              style: const TextStyle(color: Colors.amberAccent, fontFamily: 'monospace', fontSize: 13),
-              decoration: InputDecoration(
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                hintText: "např. ${field['key']}, column_a...",
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.1), fontStyle: FontStyle.italic),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.black12,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Extension pro úpravu child v buildDataRow (pokud by SettingsHelpers vracel Container)
-// V tomto případě jsem raději zkopíroval logiku layoutu přímo do _buildMappingRow, 
-// protože SettingsHelpers.buildDataRow je příliš specifický pro read-only text.
-extension WidgetModifier on Widget {
-  Widget copyWith({required Widget child}) {
-    if (this is Container) {
-      final c = this as Container;
-      return Container(
-        padding: c.padding,
-        decoration: c.decoration,
-        child: child,
-      );
-    }
-    return child;
   }
 }

@@ -6,6 +6,23 @@ The format is based on Keep a Changelog
 and this project adheres to Semantic Versioning.
 
 ---
+## [0.4.7] - 2026-02-25
+
+#### Přidáno
+- **Smart Material Suggester**: Implementováno automatické napovídání materiálů v editorech nabídek a objednávek na základě klíčových slov a aliasů z katalogu materiálů (propojení s `DbService` a modulem z v0.4.2).   
+- **Auto-Link Attachments**: Systém nyní automaticky páruje nalezené výkresy (.pdf, .step) k řádkům importované tabulky na základě shody názvu souboru a čísla pozice nebo názvu dílu.
+- **Validation Export**: Přidána možnost exportu validačního protokolu do formátu PDF v pohledu `DataValidatorView`, shrnující chyby v integritě dat před exportem do CRM.
+- **Batch Folder Action**: V seznamu zákazníků doplněna funkce pro hromadné vytvoření chybějící adresářové struktury v TECH a OFFER kořenech (využívá `FolderValidator` z v0.4.3).
+
+#### Změněno
+- **Enhanced Header Intelligence**: Algoritmus v `ExcelHeaderDetector` byl rozšířen o analýzu datových typů v následujících řádcích (Look-ahead bonus), což zvyšuje úspěšnost detekce u nestandardních exportů.
+- **UI Performance Boost**: Optimalizováno vykreslování rozsáhlých tabulek v `IngestionView` pomocí `RepaintBoundary` a vylepšené synchronizace horizontálního a vertikálního scrollu.
+- **Mapping Profiles Extension**: Profily nyní umožňují definovat i výchozí jednotky a automatické transformace (např. převod tloušťky materiálu) přímo v `MappingProfilesView`.
+
+#### Opraveno
+- **Session Cleanup Logic**: Opravena chyba v `IngestionService`, která při neočekávaném pádu aplikace zanechávala v dočasném sandboxu uzamčené soubory.
+- **Scroll Sync Fix**: Vyřešeno odskakování tabulky při automatickém posunu na doporučené kandidáty hlaviček v průvodci importem.
+- **Icon Set Unification**: Sjednoceny sady ikon napříč celou aplikací (Ingestion, Dispatcher, Sidebar) pro zajištění vizuální konzistence "Flat & Technical" designu.
 
 ## [0.4.6] - 2026-02-24
 
