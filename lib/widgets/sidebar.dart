@@ -1,7 +1,7 @@
-// lib/ui/widgets/sidebar.dart
+// lib/widgets/sidebar.dart
 
 import 'package:flutter/material.dart';
-import '../../logic/workflow_controller.dart';
+import '../logic/workflow_controller.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
@@ -51,10 +51,15 @@ class Sidebar extends StatelessWidget {
               _buildMenuItem(3, Icons.verified_user_outlined, "Validace dat", state),
               _buildMenuItem(4, Icons.output_rounded, "Export do CRM", state),
 
+              // NOVÁ SEKCE PRO PIPELINE
+              _buildSection("SPRÁVA"),
+              _buildMenuItem(5, Icons.view_kanban_outlined, "Pipeline zakázek", state),
+
               const Spacer(),
               _buildSection("SYSTÉM"),
-              _buildMenuItem(5, Icons.tune_rounded, "Mapovací profily", state),
-              _buildMenuItem(6, Icons.settings_outlined, "Nastavení", state),
+              // POSUNUTÉ INDEXY (6 a 7)
+              _buildMenuItem(6, Icons.tune_rounded, "Mapovací profily", state),
+              _buildMenuItem(7, Icons.settings_outlined, "Nastavení", state),
               
               const SizedBox(height: 24),
             ],
@@ -69,14 +74,14 @@ class Sidebar extends StatelessWidget {
   // ===========================================================================
 
   Widget _buildMenuItem(int index, IconData icon, String label, WorkflowController workflow) {
-    // Načteme stav konkrétní položky z matrixu v controlleru
+    // Načteme stav konkrétní položky z matrixu v controlleru (defaultně je isEnabled: true)
     final itemState = workflow.sidebarStates[index] ?? const SidebarItemState();
     
     final bool isSelected = selectedIndex == index;
     final bool isEnabled = itemState.isEnabled;
     
     // Určení barvy podle stavu (Neutral / Success / Error)
-    Color statusColor;
+    Color statusColor = Colors.transparent; // Výchozí inicializace
     IconData? statusIcon;
 
     switch (itemState.status) {

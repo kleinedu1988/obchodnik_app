@@ -7,6 +7,16 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.4.9] - 2026-02-25
+
+#### Přidáno
+- **Modul Pipeline zakázek (UI Preview)**: Nová záložka v sekci "SPRÁVA" pro vizuální přehled nad stavem importovaných nabídek a objednávek (Fáze: K řešení, K potvrzení, Hotovo).
+- **Stavový model a filtrace**: Implementován mockovaný datový model včetně dynamických záložek pro rychlé filtrování seznamu objednávek podle jejich fáze.
+
+#### Změněno
+- **Konzistence UX ("Data Grid")**: Vzhled Pipeline zakázek byl sjednocen do tabulkového, čistě technického zobrazení, odpovídajícího stávajícímu rozhraní (Materiály, Operace).
+- **Úprava navigace**: Reorganizace hlavního postranního panelu (Sidebar). Přidána sekce "SPRÁVA" a systémové položky (Profily, Nastavení) byly posunuty.
+
 ## [0.4.8] - 2026-02-25
 
 #### Přidáno
