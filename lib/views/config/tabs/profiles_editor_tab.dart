@@ -216,12 +216,12 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.add_rounded, size: 14, color: _accentColor.withOpacity(0.7)),
+                      Icon(Icons.add_rounded, size: 14, color: _accentColor.withValues(alpha: 0.7)),
                       const SizedBox(width: 4),
                       Text(
                         "NOVÝ",
                         style: TextStyle(
-                          color: _accentColor.withOpacity(0.7),
+                          color: _accentColor.withValues(alpha: 0.7),
                           fontSize: 9,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1,
@@ -270,12 +270,12 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
 
     return InkWell(
       onTap: () => _selectProfile(profile.id),
-      hoverColor: Colors.white.withOpacity(0.02),
+      hoverColor: Colors.white.withValues(alpha: 0.02),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected ? _accentColor.withOpacity(0.06) : Colors.transparent,
+          color: isSelected ? _accentColor.withValues(alpha: 0.06) : Colors.transparent,
           border: isLast
               ? null
               : const Border(bottom: BorderSide(color: _borderColor)),
@@ -365,7 +365,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
                 },
                 icon: const Icon(Icons.close_rounded, size: 12),
                 color: Colors.white12,
-                hoverColor: Colors.redAccent.withOpacity(0.1),
+                hoverColor: Colors.redAccent.withValues(alpha: 0.1),
                 tooltip: "Smazat profil",
                 constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
                 padding: EdgeInsets.zero,
@@ -419,7 +419,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
                 const SizedBox(height: 12),
                 Text(
                   "* Zadejte názvy sloupců v Excelu oddělené čárkou. Systém bude hledat shodu v tomto pořadí.",
-                  style: TextStyle(color: Colors.white.withOpacity(0.15), fontSize: 11),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.15), fontSize: 11),
                 ),
 
                 const SizedBox(height: 24),
@@ -451,7 +451,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
                 Icon(
                   profile.isSystem ? Icons.lock_outline_rounded : Icons.edit_note_rounded, 
                   size: 16, 
-                  color: Colors.white.withOpacity(0.15)
+                  color: Colors.white.withValues(alpha: 0.15)
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -536,7 +536,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
                 Text(
                   field['label']!,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withValues(alpha: 0.6),
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                   ),
@@ -545,7 +545,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
                 Text(
                   field['desc']!,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     fontSize: 9,
                   ),
                 ),
@@ -556,7 +556,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
           Icon(
             Icons.arrow_right_alt_rounded,
             size: 16,
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withValues(alpha: 0.08),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -564,7 +564,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
               decoration: BoxDecoration(
                 color: Colors.black26,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white.withOpacity(0.04)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
               ),
               child: TextField(
                 controller: _mappingControllers[key],
@@ -581,7 +581,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
                   ),
                   hintText: "např. ${field['key']}, column_a...",
                   hintStyle: TextStyle(
-                    color: Colors.white.withOpacity(0.08),
+                    color: Colors.white.withValues(alpha: 0.08),
                     fontStyle: FontStyle.italic,
                     fontSize: 11,
                   ),
@@ -603,7 +603,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
     return Text(
       text,
       style: TextStyle(
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white.withValues(alpha: 0.2),
         fontSize: 9,
         fontWeight: FontWeight.w900,
         letterSpacing: 1.5,
@@ -616,11 +616,11 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.tune_rounded, size: 48, color: Colors.white.withOpacity(0.05)),
+          Icon(Icons.tune_rounded, size: 48, color: Colors.white.withValues(alpha: 0.05)),
           const SizedBox(height: 16),
           Text(
             "Žádné mapovací profily",
-            style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14),
           ),
           const SizedBox(height: 16),
           TextButton(

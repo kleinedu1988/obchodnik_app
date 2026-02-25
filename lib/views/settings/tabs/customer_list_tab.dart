@@ -173,9 +173,9 @@ class _CustomerListTabState extends State<CustomerListTab> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         height: 40,
         decoration: BoxDecoration(
-          color: _onlyMissing ? _blueColor.withOpacity(0.15) : _bgCard,
+          color: _onlyMissing ? _blueColor.withValues(alpha: 0.15) : _bgCard,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: _onlyMissing ? _blueColor.withOpacity(0.5) : _borderColor),
+          border: Border.all(color: _onlyMissing ? _blueColor.withValues(alpha: 0.5) : _borderColor),
         ),
         child: Row(
           children: [
@@ -216,7 +216,7 @@ class _CustomerListTabState extends State<CustomerListTab> {
         children: [
           const Icon(Icons.search_off_rounded, size: 48, color: Colors.white12),
           const SizedBox(height: 16),
-          Text("Žádní zákazníci nenalezeni", style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14)),
+          Text("Žádní zákazníci nenalezeni", style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14)),
         ],
       ),
     );
@@ -289,7 +289,7 @@ class _CustomerRowState extends State<_CustomerRow> {
       onEnter: (_) => setState(() => _isHovering = true),
       onExit: (_) => setState(() => _isHovering = false),
       child: Container(
-        color: _isHovering ? Colors.white.withOpacity(0.02) : Colors.transparent,
+        color: _isHovering ? Colors.white.withValues(alpha: 0.02) : Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
@@ -335,9 +335,9 @@ class _CustomerRowState extends State<_CustomerRow> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: widget.accentColor.withOpacity(0.1),
+        color: widget.accentColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: widget.accentColor.withOpacity(0.3)),
+        border: Border.all(color: widget.accentColor.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,12 +362,12 @@ class _CustomerRowState extends State<_CustomerRow> {
       decoration: BoxDecoration(
         color: Colors.black26,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _focusNode.hasFocus ? widget.accentColor.withOpacity(0.5) : widget.borderColor),
+        border: Border.all(color: _focusNode.hasFocus ? widget.accentColor.withValues(alpha: 0.5) : widget.borderColor),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
-          Icon(Icons.edit_note_rounded, size: 16, color: _pathCtrl.text.isEmpty ? Colors.white10 : widget.accentColor.withOpacity(0.5)),
+          Icon(Icons.edit_note_rounded, size: 16, color: _pathCtrl.text.isEmpty ? Colors.white10 : widget.accentColor.withValues(alpha: 0.5)),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
@@ -388,8 +388,8 @@ class _CustomerRowState extends State<_CustomerRow> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text("$label: ", style: TextStyle(color: widget.accentColor.withOpacity(0.6), fontSize: 10, fontWeight: FontWeight.bold)),
-        Text(value ?? '-', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 10, fontFamily: 'monospace')),
+        Text("$label: ", style: TextStyle(color: widget.accentColor.withValues(alpha: 0.6), fontSize: 10, fontWeight: FontWeight.bold)),
+        Text(value ?? '-', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 10, fontFamily: 'monospace')),
       ],
     );
   }
@@ -443,11 +443,11 @@ class _AnimatedStatusDotState extends State<_AnimatedStatusDot> with SingleTicke
             height: 18,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: color.withOpacity(0.1),
-              border: Border.all(color: color.withOpacity(0.5 * _animation.value), width: 1.5),
+              color: color.withValues(alpha: 0.1),
+              border: Border.all(color: color.withValues(alpha: 0.5 * _animation.value), width: 1.5),
               boxShadow: [
                 BoxShadow(
-                  color: color.withOpacity(0.2 * _animation.value),
+                  color: color.withValues(alpha: 0.2 * _animation.value),
                   blurRadius: 6 * _animation.value,
                   spreadRadius: 1 * _animation.value,
                 )
@@ -456,7 +456,7 @@ class _AnimatedStatusDotState extends State<_AnimatedStatusDot> with SingleTicke
             child: Center(
               child: Text(
                 widget.label,
-                style: TextStyle(color: color.withOpacity(0.8), fontSize: 9, fontWeight: FontWeight.w900),
+                style: TextStyle(color: color.withValues(alpha: 0.8), fontSize: 9, fontWeight: FontWeight.w900),
               ),
             ),
           );

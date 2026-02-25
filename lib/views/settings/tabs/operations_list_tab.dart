@@ -146,10 +146,10 @@ class _OperationsListTabState extends State<OperationsListTab> {
         ElevatedButton.icon(
           onPressed: () => _showEditDialog(),
           style: ElevatedButton.styleFrom(
-            backgroundColor: _opColor.withOpacity(0.10),
+            backgroundColor: _opColor.withValues(alpha: 0.10),
             foregroundColor: _opColor,
             elevation: 0,
-            side: BorderSide(color: _opColor.withOpacity(0.50)),
+            side: BorderSide(color: _opColor.withValues(alpha: 0.50)),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
@@ -187,7 +187,7 @@ class _OperationsListTabState extends State<OperationsListTab> {
 
     return InkWell(
       onTap: () => _showEditDialog(item: item),
-      hoverColor: Colors.white.withOpacity(0.02),
+      hoverColor: Colors.white.withValues(alpha: 0.02),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -200,9 +200,9 @@ class _OperationsListTabState extends State<OperationsListTab> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _opColor.withOpacity(0.10),
+                    color: _opColor.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: _opColor.withOpacity(0.30)),
+                    border: Border.all(color: _opColor.withValues(alpha: 0.30)),
                   ),
                   child: Text(
                     kod,
@@ -260,13 +260,17 @@ class _OperationsListTabState extends State<OperationsListTab> {
                     color: Colors.white24,
                     hoverColor: Colors.white10,
                     tooltip: "Upravit",
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
                   ),
                   IconButton(
                     onPressed: () => _smazatOperaci(item['id'] as int),
                     icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                    color: Colors.redAccent.withOpacity(0.55),
-                    hoverColor: Colors.redAccent.withOpacity(0.10),
+                    color: Colors.redAccent.withValues(alpha: 0.55),
+                    hoverColor: Colors.redAccent.withValues(alpha: 0.10),
                     tooltip: "Smazat",
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
                   ),
                 ],
               ),
@@ -410,7 +414,7 @@ class _OperationsListTabState extends State<OperationsListTab> {
           const SizedBox(height: 16),
           Text(
             "Žádné výrobní operace",
-            style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14),
           ),
           const SizedBox(height: 16),
           TextButton(
