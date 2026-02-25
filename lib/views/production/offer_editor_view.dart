@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import '../../logic/notifications.dart';
 import 'package:path/path.dart' as p;
 
@@ -22,6 +23,10 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
   final TextEditingController _offerIdCtrl = TextEditingController(text: "NAB-2026-0001");
   final TextEditingController _customerCtrl = TextEditingController();
 
+  // Posuvníky pro seznamy souborů
+  final ScrollController _collapsedScrollCtrl = ScrollController();
+  final ScrollController _expandedScrollCtrl = ScrollController();
+
   // Dropzone
   bool _isDragOver = false;
   late AnimationController _pulseController;
@@ -31,6 +36,8 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
     "vykres_hridel_v1.pdf",
     "prizma_base.step",
     "schema_zapojeni.pdf",
+    "technicka_zprava.pdf",
+    "model_sestavy.stp",
   ];
 
   final List<_OfferItem> _items = [
@@ -58,6 +65,8 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
     _pulseController.dispose();
     _offerIdCtrl.dispose();
     _customerCtrl.dispose();
+    _collapsedScrollCtrl.dispose();
+    _expandedScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -316,93 +325,122 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
   }
 
   // =========================================================================
-  //  DROPZONE: DOKUMENTACE Z INGESCE
+  //  DROPZONE: DOKUMENTACE Z INGESCE (DESKTOP DROP)
   // =========================================================================
 
   Widget _buildDocumentationDropzone() {
-    return DragTarget<Object>(
-      onWillAcceptWithDetails: (_) {
+    return DropTarget(
+      onDragEntered: (details) {
         if (!_isDragOver) {
           setState(() => _isDragOver = true);
           _pulseController.repeat(reverse: true);
         }
-        return true;
       },
-      onLeave: (_) {
+      onDragExited: (details) {
         setState(() => _isDragOver = false);
         _pulseController.stop();
         _pulseController.reset();
       },
-      onAcceptWithDetails: (details) {
+      onDragDone: (details) {
         setState(() {
           _isDragOver = false;
-          _attachedDrawings.add("novy_soubor_${_attachedDrawings.length + 1}.pdf");
+          for (var file in details.files) {
+            _attachedDrawings.add(file.name);
+          }
         });
         _pulseController.stop();
         _pulseController.reset();
-        Notifications.showSuccess(context, "SOUBOR PŘIDÁN DO DOKUMENTACE");
+        
+        final count = details.files.length;
+        Notifications.showSuccess(context, "$count SOUBOR(Ů) PŘIDÁNO DO DOKUMENTACE");
       },
-      builder: (context, candidateData, rejectedData) {
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: _isDragOver ? 32 : 12,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: _isDragOver ? 48 : 28,
+        ),
+        decoration: BoxDecoration(
+          color: _isDragOver ? _accentColor.withOpacity(0.06) : _bgCard,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: _isDragOver ? _accentColor.withOpacity(0.5) : _borderColor,
+            width: _isDragOver ? 2 : 1,
           ),
-          decoration: BoxDecoration(
-            color: _isDragOver ? _accentColor.withOpacity(0.06) : _bgCard,
-            borderRadius: BorderRadius.circular(10),
-            border: _isDragOver
-                ? Border.all(color: _accentColor.withOpacity(0.5), width: 2)
-                : Border.all(color: _borderColor),
-          ),
-          child: _isDragOver ? _buildDropzoneExpanded() : _buildDropzoneCollapsed(),
-        );
-      },
+        ),
+        child: _isDragOver ? _buildDropzoneExpanded() : _buildDropzoneCollapsed(),
+      ),
     );
   }
 
   Widget _buildDropzoneCollapsed() {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("DOKUMENTACE Z INGESCE", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
-        const SizedBox(width: 12),
-        Container(width: 1, height: 20, color: _borderColor),
-        const SizedBox(width: 12),
+        // 1. KOMPAKTNÍ LEVÝ BLOK (Ikona a text)
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.folder_open_rounded, size: 20, color: Colors.white24),
+              SizedBox(height: 4),
+              Text("PŘÍLOHY", style: TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.0)),
+            ],
+          ),
+        ),
+        
+        const SizedBox(width: 16),
+        Container(width: 1, height: 36, color: _borderColor),
+        const SizedBox(width: 16),
+
+        // 2. SCROLLOVATELNÝ MULTI-LINE WRAP PRO SOUBORY
         Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _attachedDrawings.asMap().entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: _FileChip(
-                    file: entry.value,
-                    accentColor: _accentColor,
-                    icon: _getIconForExt(entry.value),
-                    onDelete: () => setState(() => _attachedDrawings.removeAt(entry.key)),
-                  ),
-                );
-              }).toList(),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 70),
+            child: Scrollbar(
+              controller: _collapsedScrollCtrl,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _collapsedScrollCtrl,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _attachedDrawings.asMap().entries.map((entry) {
+                    return _FileChip(
+                      file: entry.value,
+                      accentColor: _accentColor,
+                      icon: _getIconForExt(entry.value),
+                      onDelete: () => setState(() => _attachedDrawings.removeAt(entry.key)),
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Text("${_attachedDrawings.length}", style: const TextStyle(color: Colors.white24, fontSize: 10, fontFamily: 'monospace')),
-        const SizedBox(width: 8),
-        InkWell(
-          onTap: () => setState(() => _attachedDrawings.add("upload_${_attachedDrawings.length + 1}.pdf")),
-          borderRadius: BorderRadius.circular(4),
-          child: Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(
-              color: _accentColor.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: _accentColor.withOpacity(0.2)),
-            ),
-            child: Icon(Icons.add_rounded, size: 16, color: _accentColor.withOpacity(0.5)),
+
+        const SizedBox(width: 16),
+        Container(width: 1, height: 36, color: _borderColor),
+        const SizedBox(width: 16),
+
+        // 3. KOMPAKTNÍ PRAVÝ BLOK (Nápověda + Počet souborů)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Row(
+            children: [
+              Icon(Icons.touch_app_rounded, size: 16, color: _accentColor.withOpacity(0.6)),
+              const SizedBox(width: 8),
+              Text("Přetáhnout sem", style: TextStyle(color: _accentColor.withOpacity(0.6), fontSize: 11, fontStyle: FontStyle.italic)),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+                child: Text("${_attachedDrawings.length}", style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+            ],
           ),
         ),
       ],
@@ -441,20 +479,28 @@ class _OfferEditorViewState extends State<OfferEditorView> with SingleTickerProv
               const SizedBox(height: 16),
               Divider(color: _accentColor.withOpacity(0.1), height: 1),
               const SizedBox(height: 12),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _attachedDrawings.asMap().entries.map((entry) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _FileChip(
-                        file: entry.value,
-                        accentColor: _accentColor,
-                        icon: _getIconForExt(entry.value),
-                        onDelete: () => setState(() => _attachedDrawings.removeAt(entry.key)),
-                      ),
-                    );
-                  }).toList(),
+              
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 120),
+                child: Scrollbar(
+                  controller: _expandedScrollCtrl,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _expandedScrollCtrl,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: _attachedDrawings.asMap().entries.map((entry) {
+                        return _FileChip(
+                          file: entry.value,
+                          accentColor: _accentColor,
+                          icon: _getIconForExt(entry.value),
+                          onDelete: () => setState(() => _attachedDrawings.removeAt(entry.key)),
+                        );
+                      }).toList(),
+                    ),
+                  ),
                 ),
               ),
             ],

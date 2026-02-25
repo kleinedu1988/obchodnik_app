@@ -11,10 +11,6 @@ import 'package:mrb_obchodnik/logic/workflow_controller.dart';
 import 'widgets/sidebar.dart'; 
 import 'views/ingestion/ingestion_view.dart';
 import 'package:mrb_obchodnik/views/production/editor_dispatcher.dart';
-import 'views/tools/attachment_matching_view.dart';
-import 'views/tools/data_validator_view.dart';
-import 'views/tools/crm_export_view.dart';
-// NOVÝ IMPORT PIPELINE:
 import 'views/production/order_pipeline_view.dart'; 
 import 'views/config/mapping_profiles_view.dart';
 import 'views/settings/settings_view.dart';
@@ -89,11 +85,13 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    // ListenableBuilder sleduje WorkflowController napříč celou aplikací
     return ListenableBuilder(
       listenable: _workflow,
       builder: (context, _) {
         
-        // AUTOMATICKÝ SKOK: Pokud se odemkne editor a jsme na úvodní ploše
+        // AUTOMATICKÝ SKOK: Pokud se odemkne editor a jsme na úvodní ploše, 
+        // přepneme pohled na Editor automaticky.
         if (_workflow.isEditorUnlocked && _selectedIndex == 0) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _selectedIndex != 1) {
@@ -105,7 +103,7 @@ class _AppShellState extends State<AppShell> {
         return Scaffold(
           body: Row(
             children: [
-              // 1. SIDEBAR
+              // 1. SIDEBAR: Neustále synchronizovaný s Controllerem
               Sidebar(
                 selectedIndex: _selectedIndex,
                 onItemSelected: _onMenuSelected,
@@ -135,21 +133,23 @@ class _AppShellState extends State<AppShell> {
   // --- CENTRÁLNÍ ROZCESTNÍK (Router) ---
   Widget _buildPageContent(int index) {
     switch (index) {
-      case 0: return const IngestionView();
+      case 0: 
+        // Úvodní obrazovka pro nahrávání souborů
+        return const IngestionView();
+      
       case 1: 
+        // Pokud je editor odemčen, zobrazíme Dispatcher (ten řeší Offer vs Order)
+        // Pokud odemčen není, IngestionView se postará o výzvu k nahrání
         return _workflow.isEditorUnlocked 
             ? const EditorDispatcher() 
             : const IngestionView();
-      case 2: return const AttachmentMatchingView();
-      case 3: return const DataValidatorView();
-      case 4: return const CrmExportView();
       
-      // NOVÝ INDEX PRO PIPELINE
-      case 5: return const OrderPipelineView(); 
+      // --- SLOUČENO: Validace, Párování a Export se nyní řeší přímo v Editoru ---
+      // Indexy se tím pádem posouvají dolů
       
-      // POSUNUTÉ INDEXY PRO SYSTÉM
-      case 6: return const MappingProfilesView();
-      case 7: return const SettingsView();
+      case 2: return const OrderPipelineView(); 
+      case 3: return const MappingProfilesView();
+      case 4: return const SettingsView();
       
       default: 
         return const Center(child: Text("Modul nenalezen"));

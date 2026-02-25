@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import '../../logic/notifications.dart';
 import 'package:path/path.dart' as p;
 
@@ -10,7 +11,6 @@ class OrderEditorView extends StatefulWidget {
 }
 
 class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProviderStateMixin {
-  // --- DESIGN KONSTANTY (identické s Pipeline / Materiály / Operace) ---
   static const Color _bgCard = Color(0xFF16181D);
   static const Color _borderColor = Color(0xFF2A2D35);
   static const Color _textDim = Colors.white54;
@@ -18,11 +18,13 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
   static const Color _matColor = Color(0xFFFF9F1C);
   static const Color _accentColor = Color(0xFF4077D1);
 
-  // --- STAV ---
   final TextEditingController _orderIdCtrl = TextEditingController(text: "OBJ-2026-0452");
   final TextEditingController _refOfferCtrl = TextEditingController(text: "NAB-2026-0001");
 
-  // Dropzone
+  // Posuvníky pro seznamy souborů
+  final ScrollController _collapsedScrollCtrl = ScrollController();
+  final ScrollController _expandedScrollCtrl = ScrollController();
+
   bool _isDragOver = false;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -32,15 +34,19 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
     "dil_01.step",
     "dil_02.step",
     "balici_predpis.txt",
+    "certifikat_materialu.pdf",
+    "vykres_01.dwg",
+    "vykres_02.dxf",
   ];
 
+  // --- NOVÁ MOCK DATA S PŘIPOJENÝMI VÝKRESY ---
   final List<_OrderItem> _items = [
-    _OrderItem(name: "Sestava rámu X-Y", material: "Ocel 11 373", qty: "2", deadline: "20.02."),
-    _OrderItem(name: "Čep kalený 20mm", material: "16MnCr5", qty: "50", deadline: "18.02."),
-    _OrderItem(name: "Kryt plechový", material: "DX51D+Z", qty: "10", deadline: "22.02."),
-    _OrderItem(name: "Distanční kroužek", material: "S235JR", qty: "25", deadline: "19.02."),
-    _OrderItem(name: "Nosník příčný L-400", material: "S355J2", qty: "4", deadline: "21.02."),
-    _OrderItem(name: "Patka montážní", material: "DX51D+Z", qty: "8", deadline: "23.02."),
+    _OrderItem(name: "Sestava rámu X-Y", material: "Ocel 11 373", qty: "2", deadline: "20.02.", pdfFile: "ram_sestava.pdf", stepFile: "ram_sestava.stp"),
+    _OrderItem(name: "Čep kalený 20mm", material: "16MnCr5", qty: "50", deadline: "18.02.", pdfFile: "cep_v2.pdf", dxfFile: "cep_v2.dxf"),
+    _OrderItem(name: "Kryt plechový", material: "DX51D+Z", qty: "10", deadline: "22.02.", dxfFile: "kryt_paly.dxf", imgFile: "skica_zakaznik.jpg"),
+    _OrderItem(name: "Distanční kroužek", material: "S235JR", qty: "25", deadline: "19.02.", pdfFile: "krouzek.pdf"),
+    _OrderItem(name: "Nosník příčný L-400", material: "S355J2", qty: "4", deadline: "21.02."), // Bez výkresů
+    _OrderItem(name: "Patka montážní", material: "DX51D+Z", qty: "8", deadline: "23.02.", stepFile: "patka_model.step"),
   ];
 
   @override
@@ -60,12 +66,10 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
     _pulseController.dispose();
     _orderIdCtrl.dispose();
     _refOfferCtrl.dispose();
+    _collapsedScrollCtrl.dispose();
+    _expandedScrollCtrl.dispose();
     super.dispose();
   }
-
-  // =========================================================================
-  //  BUILD
-  // =========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -75,8 +79,6 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 24),
-
-          // 1) HORNÍ PÁS: Produkční údaje (2/3) + Kontrola dat (1/3)
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -87,17 +89,10 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
               ],
             ),
           ),
-
           const SizedBox(height: 24),
-
-          // 2) CONTROLS
           _buildControls(),
           const SizedBox(height: 16),
-
-          // 3) HLAVIČKA TABULKY
           _buildTableHeader(),
-
-          // 4) SEZNAM POLOŽEK
           Expanded(
             child: _items.isEmpty
                 ? _buildEmptyState()
@@ -108,18 +103,12 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
                     itemBuilder: (context, index) => _buildItemRow(_items[index]),
                   ),
           ),
-
-          // 5) VÝROBNÍ DOKUMENTACE – DROPZONE
           _buildDocumentationDropzone(),
           const SizedBox(height: 24),
         ],
       ),
     );
   }
-
-  // =========================================================================
-  //  HORNÍ PÁS: PRODUKČNÍ ÚDAJE
-  // =========================================================================
 
   Widget _buildFormCard() {
     return Container(
@@ -164,10 +153,6 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
     );
   }
 
-  // =========================================================================
-  //  HORNÍ PÁS: KONTROLA DAT
-  // =========================================================================
-
   Widget _buildSummaryCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -194,10 +179,6 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
       ),
     );
   }
-
-  // =========================================================================
-  //  CONTROLS
-  // =========================================================================
 
   Widget _buildControls() {
     return Row(
@@ -241,7 +222,7 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
   }
 
   // =========================================================================
-  //  TABLE HEADER
+  //  TABULKA POLOŽEK
   // =========================================================================
 
   Widget _buildTableHeader() {
@@ -252,8 +233,9 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
       ),
       child: Row(
         children: [
-          _headerText("POLOŽKA", flex: 4),
+          _headerText("POLOŽKA", flex: 3),
           _headerText("MATERIÁL", flex: 2),
+          _headerText("VÝKRESY", flex: 2), // NOVÝ SLOUPEC
           _headerText("MNOŽSTVÍ", flex: 1),
           _headerText("DEADLINE", flex: 1),
           const SizedBox(width: 80),
@@ -261,10 +243,6 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
       ),
     );
   }
-
-  // =========================================================================
-  //  ŘÁDEK
-  // =========================================================================
 
   Widget _buildItemRow(_OrderItem item) {
     return InkWell(
@@ -275,7 +253,7 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
         child: Row(
           children: [
             Expanded(
-              flex: 4,
+              flex: 3,
               child: Text(item.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             Expanded(
@@ -289,6 +267,23 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
                 ),
               ),
             ),
+            
+            // --- BLOK VÝKRESŮ (PDF, DXF, STEP, IMG) ---
+            Expanded(
+              flex: 2,
+              child: Row(
+                children: [
+                  _buildFileIcon(item.pdfFile, Icons.picture_as_pdf_rounded, Colors.redAccent),
+                  const SizedBox(width: 6),
+                  _buildFileIcon(item.dxfFile, Icons.architecture_rounded, Colors.lightBlue),
+                  const SizedBox(width: 6),
+                  _buildFileIcon(item.stepFile, Icons.view_in_ar_rounded, Colors.green),
+                  const SizedBox(width: 6),
+                  _buildFileIcon(item.imgFile, Icons.image_rounded, Colors.amber),
+                ],
+              ),
+            ),
+
             Expanded(flex: 1, child: Text("${item.qty} ks", style: const TextStyle(fontSize: 12, color: Colors.white54, fontWeight: FontWeight.w500))),
             Expanded(flex: 1, child: Text(item.deadline, style: const TextStyle(color: _orderColor, fontSize: 12, fontWeight: FontWeight.bold))),
             SizedBox(
@@ -296,8 +291,8 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  IconButton(onPressed: () {}, icon: const Icon(Icons.edit_note_rounded, size: 18), color: Colors.white24, tooltip: "Upravit položku", hoverColor: Colors.white10),
-                  IconButton(onPressed: () {}, icon: const Icon(Icons.delete_outline_rounded, size: 18), color: Colors.redAccent.withOpacity(0.5), tooltip: "Odebrat položku", hoverColor: Colors.redAccent.withOpacity(0.1)),
+                  IconButton(onPressed: () {}, icon: const Icon(Icons.edit_note_rounded, size: 18), color: Colors.white24),
+                  IconButton(onPressed: () {}, icon: const Icon(Icons.delete_outline_rounded, size: 18), color: Colors.redAccent.withOpacity(0.5)),
                 ],
               ),
             ),
@@ -307,108 +302,149 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
     );
   }
 
+  // --- POMOCNÁ METODA PRO IKONKU SOUBORU ---
+  Widget _buildFileIcon(String? filename, IconData icon, Color activeColor) {
+    final bool exists = filename != null;
+    return Tooltip(
+      message: exists ? filename : "Chybí",
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: exists ? activeColor.withOpacity(0.15) : Colors.white.withOpacity(0.02),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: exists ? activeColor.withOpacity(0.4) : Colors.white.withOpacity(0.05)),
+        ),
+        child: Icon(
+          icon,
+          size: 14,
+          color: exists ? activeColor : Colors.white24,
+        ),
+      ),
+    );
+  }
+
   // =========================================================================
-  //  DROPZONE: VÝROBNÍ DOKUMENTACE
+  //  DROPZONE S KOMPAKTNÍM NÁPISEM
   // =========================================================================
 
   Widget _buildDocumentationDropzone() {
-    return DragTarget<Object>(
-      onWillAcceptWithDetails: (_) {
+    return DropTarget(
+      onDragEntered: (details) {
         if (!_isDragOver) {
           setState(() => _isDragOver = true);
           _pulseController.repeat(reverse: true);
         }
-        return true;
       },
-      onLeave: (_) {
+      onDragExited: (details) {
         setState(() => _isDragOver = false);
         _pulseController.stop();
         _pulseController.reset();
       },
-      onAcceptWithDetails: (details) {
+      onDragDone: (details) {
         setState(() {
           _isDragOver = false;
-          _attachedFiles.add("novy_soubor_${_attachedFiles.length + 1}.pdf");
+          for (var file in details.files) {
+            _attachedFiles.add(file.name);
+          }
         });
         _pulseController.stop();
         _pulseController.reset();
-        Notifications.showSuccess(context, "SOUBOR PŘIDÁN DO DOKUMENTACE");
+        
+        final count = details.files.length;
+        Notifications.showSuccess(context, "$count SOUBOR(Ů) PŘIDÁNO DO DOKUMENTACE");
       },
-      builder: (context, candidateData, rejectedData) {
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: _isDragOver ? 32 : 12,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: _isDragOver ? 48 : 28,
+        ),
+        decoration: BoxDecoration(
+          color: _isDragOver ? _accentColor.withOpacity(0.06) : _bgCard,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: _isDragOver ? _accentColor.withOpacity(0.5) : _borderColor,
+            width: _isDragOver ? 2 : 1,
           ),
-          decoration: BoxDecoration(
-            color: _isDragOver ? _accentColor.withOpacity(0.06) : _bgCard,
-            borderRadius: BorderRadius.circular(10),
-            border: _isDragOver
-                ? Border.all(color: _accentColor.withOpacity(0.5), width: 2)
-                : Border.all(color: _borderColor),
-          ),
-          child: _isDragOver ? _buildDropzoneExpanded() : _buildDropzoneCollapsed(),
-        );
-      },
+        ),
+        child: _isDragOver ? _buildDropzoneExpanded() : _buildDropzoneCollapsed(),
+      ),
     );
   }
 
-  // ── Normální stav: kompaktní lišta ──────────────────────────────────────
-
   Widget _buildDropzoneCollapsed() {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("VÝROBNÍ DOKUMENTACE", style: TextStyle(color: Colors.white24, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
-        const SizedBox(width: 12),
-        Container(width: 1, height: 20, color: _borderColor),
-        const SizedBox(width: 12),
+        // 1. KOMPAKTNÍ LEVÝ BLOK
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.folder_open_rounded, size: 20, color: Colors.white24),
+              SizedBox(height: 4),
+              Text("PŘÍLOHY", style: TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.0)),
+            ],
+          ),
+        ),
+        
+        const SizedBox(width: 16),
+        Container(width: 1, height: 36, color: _borderColor),
+        const SizedBox(width: 16),
 
-        // Soubory
+        // 2. SCROLLOVATELNÝ MULTI-LINE WRAP
         Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _attachedFiles.asMap().entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: _FileChip(
-                    file: entry.value,
-                    accentColor: _accentColor,
-                    icon: _getIconForExt(entry.value),
-                    onDelete: () => setState(() => _attachedFiles.removeAt(entry.key)),
-                  ),
-                );
-              }).toList(),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 70),
+            child: Scrollbar(
+              controller: _collapsedScrollCtrl,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _collapsedScrollCtrl,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _attachedFiles.asMap().entries.map((entry) {
+                    return _FileChip(
+                      file: entry.value,
+                      accentColor: _accentColor,
+                      icon: _getIconForExt(entry.value),
+                      onDelete: () => setState(() => _attachedFiles.removeAt(entry.key)),
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
           ),
         ),
 
-        const SizedBox(width: 12),
-        Text("${_attachedFiles.length}", style: const TextStyle(color: Colors.white24, fontSize: 10, fontFamily: 'monospace')),
-        const SizedBox(width: 8),
+        const SizedBox(width: 16),
+        Container(width: 1, height: 36, color: _borderColor),
+        const SizedBox(width: 16),
 
-        // Mini "+" tlačítko
-        InkWell(
-          onTap: () => setState(() => _attachedFiles.add("upload_${_attachedFiles.length + 1}.pdf")),
-          borderRadius: BorderRadius.circular(4),
-          child: Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(
-              color: _accentColor.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: _accentColor.withOpacity(0.2)),
-            ),
-            child: Icon(Icons.add_rounded, size: 16, color: _accentColor.withOpacity(0.5)),
+        // 3. KOMPAKTNÍ PRAVÝ BLOK
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Row(
+            children: [
+              Icon(Icons.touch_app_rounded, size: 16, color: _accentColor.withOpacity(0.6)),
+              const SizedBox(width: 8),
+              Text("Přetáhnout sem", style: TextStyle(color: _accentColor.withOpacity(0.6), fontSize: 11, fontStyle: FontStyle.italic)),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+                child: Text("${_attachedFiles.length}", style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
-
-  // ── Rozbalený stav: drag hover ─────────────────────────────────────────
 
   Widget _buildDropzoneExpanded() {
     return AnimatedBuilder(
@@ -417,7 +453,6 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Ikona + text
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -439,26 +474,32 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
               "PDF, STEP, DXF, DWG a další výrobní dokumentace",
               style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 11),
             ),
-
-            // Existující soubory
             if (_attachedFiles.isNotEmpty) ...[
               const SizedBox(height: 16),
               Divider(color: _accentColor.withOpacity(0.1), height: 1),
               const SizedBox(height: 12),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _attachedFiles.asMap().entries.map((entry) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _FileChip(
-                        file: entry.value,
-                        accentColor: _accentColor,
-                        icon: _getIconForExt(entry.value),
-                        onDelete: () => setState(() => _attachedFiles.removeAt(entry.key)),
-                      ),
-                    );
-                  }).toList(),
+              
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 120),
+                child: Scrollbar(
+                  controller: _expandedScrollCtrl,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _expandedScrollCtrl,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: _attachedFiles.asMap().entries.map((entry) {
+                        return _FileChip(
+                          file: entry.value,
+                          accentColor: _accentColor,
+                          icon: _getIconForExt(entry.value),
+                          onDelete: () => setState(() => _attachedFiles.removeAt(entry.key)),
+                        );
+                      }).toList(),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -467,10 +508,6 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
       },
     );
   }
-
-  // =========================================================================
-  //  SDÍLENÉ HELPERS
-  // =========================================================================
 
   Widget _inputField(String label, TextEditingController ctrl, {IconData? icon, Color? valueColor}) {
     return Column(
@@ -540,10 +577,6 @@ class _OrderEditorViewState extends State<OrderEditorView> with SingleTickerProv
   }
 }
 
-// ===========================================================================
-//  FILE CHIP – hover efekt s ×
-// ===========================================================================
-
 class _FileChip extends StatefulWidget {
   final String file;
   final Color accentColor;
@@ -589,7 +622,6 @@ class _FileChipState extends State<_FileChip> {
             Icon(widget.icon, size: 13, color: widget.accentColor.withOpacity(0.5)),
             const SizedBox(width: 8),
             Text(widget.file, style: const TextStyle(color: Colors.white60, fontSize: 11)),
-            // × na hover
             AnimatedSize(
               duration: const Duration(milliseconds: 150),
               child: _hovered
@@ -609,20 +641,25 @@ class _FileChipState extends State<_FileChip> {
   }
 }
 
-// ===========================================================================
-//  DATOVÝ MODEL (Mock)
-// ===========================================================================
-
+// --- DATOVÝ MODEL (NOVĚ ROZŠÍŘENÝ O TYPY VÝKRESŮ) ---
 class _OrderItem {
   final String name;
   final String material;
   final String qty;
   final String deadline;
+  final String? pdfFile;
+  final String? dxfFile;
+  final String? stepFile;
+  final String? imgFile;
 
   const _OrderItem({
     required this.name,
     required this.material,
     required this.qty,
     required this.deadline,
+    this.pdfFile,
+    this.dxfFile,
+    this.stepFile,
+    this.imgFile,
   });
 }

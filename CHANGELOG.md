@@ -7,6 +7,18 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.5.1] - 2026-02-25
+
+#### Přidáno
+- **Nativní Drag & Drop**: Do editorů nabídek a objednávek implementována knihovna `desktop_drop` pro přímé přetahování souborů z operačního systému.
+- **Indikátory výkresů v řádku**: Do tabulky položek přidány dynamické ikonky pro zobrazení stavu připojených výkresů (PDF, DXF, STEP, IMG) s interaktivním Tooltipem.
+
+#### Změněno
+- **Zjednodušení Sidebaru a Routingu**: Odstraněna celá sekce "ZPRACOVÁNÍ". Moduly *Párování výkresů*, *Validace dat* a *Export do CRM* byly zrušeny jako samostatná okna – jejich logika se nyní bude odehrávat plně na pozadí přímo v Editoru.
+- **Dostupnost menu**: Položky *Pipeline zakázek*, *Mapovací profily* a *Nastavení* jsou v Sidebaru nově dostupné vždy, nezávisle na stavu rozečtených dat.
+- **Kompaktní Dropzone**: Změněn layout spodní dokumentační lišty v editorech, přidán scrollovatelný `Wrap` pro zobrazení velkého množství přiložených souborů na více řádcích.
+- **UX Tabulky**: Akční tlačítka (Upravit, Smazat) na konci řádků dostala hover efekty a nápovědné Tooltipy. Spolu s indikátory výkresů byla sjednocena k pravému okraji pro čistší vizuál.
+
 ## [0.5.0] - 2026-02-25
 
 #### Přidáno

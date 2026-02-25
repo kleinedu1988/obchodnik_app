@@ -38,28 +38,25 @@ class Sidebar extends StatelessWidget {
               const SizedBox(height: 24),
 
               _buildSection("VSTUP DAT"),
-              _buildMenuItem(0, Icons.move_to_inbox_rounded, "Drop Zone", state),
+              // Úvodní obrazovka je dostupná vždy
+              _buildMenuItem(0, Icons.move_to_inbox_rounded, "Drop Zone", state, forceEnabled: true),
 
-              _buildSection("EDITOR"),
+              _buildSection("REDAKCE"),
+              // Jedině Editor je závislý na WorkflowControlleru (čeká na data)
               _buildMenuItem(1, 
                 state.docType == DocType.offer ? Icons.description_outlined : Icons.shopping_cart_outlined, 
                 state.docType == DocType.offer ? "Příprava nabídky" : "Příprava objednávky", 
                 state),
 
-              _buildSection("ZPRACOVÁNÍ"),
-              _buildMenuItem(2, Icons.link_rounded, "Párování výkresů", state),
-              _buildMenuItem(3, Icons.verified_user_outlined, "Validace dat", state),
-              _buildMenuItem(4, Icons.output_rounded, "Export do CRM", state),
-
-              // NOVÁ SEKCE PRO PIPELINE
-              _buildSection("SPRÁVA"),
-              _buildMenuItem(5, Icons.view_kanban_outlined, "Pipeline zakázek", state),
+              _buildSection("SPRÁVA ZAKÁZEK"),
+              // Pipeline je nyní dostupná VŽDY
+              _buildMenuItem(2, Icons.view_kanban_outlined, "Pipeline zakázek", state, forceEnabled: true),
 
               const Spacer(),
               _buildSection("SYSTÉM"),
-              // POSUNUTÉ INDEXY (6 a 7)
-              _buildMenuItem(6, Icons.tune_rounded, "Mapovací profily", state),
-              _buildMenuItem(7, Icons.settings_outlined, "Nastavení", state),
+              // Systémové položky jsou dostupné VŽDY
+              _buildMenuItem(3, Icons.tune_rounded, "Mapovací profily", state, forceEnabled: true),
+              _buildMenuItem(4, Icons.settings_outlined, "Nastavení", state, forceEnabled: true),
               
               const SizedBox(height: 24),
             ],
@@ -73,15 +70,16 @@ class Sidebar extends StatelessWidget {
   //  STAVOVÝ RENDERER POLOŽKY
   // ===========================================================================
 
-  Widget _buildMenuItem(int index, IconData icon, String label, WorkflowController workflow) {
-    // Načteme stav konkrétní položky z matrixu v controlleru (defaultně je isEnabled: true)
+  Widget _buildMenuItem(int index, IconData icon, String label, WorkflowController workflow, {bool forceEnabled = false}) {
+    // Načteme stav konkrétní položky z matrixu v controlleru
     final itemState = workflow.sidebarStates[index] ?? const SidebarItemState();
     
     final bool isSelected = selectedIndex == index;
-    final bool isEnabled = itemState.isEnabled;
+    // Pokud je forceEnabled true, ignorujeme zámek z WorkflowControlleru
+    final bool isEnabled = forceEnabled || itemState.isEnabled;
     
     // Určení barvy podle stavu (Neutral / Success / Error)
-    Color statusColor = Colors.transparent; // Výchozí inicializace
+    Color statusColor = Colors.transparent;
     IconData? statusIcon;
 
     switch (itemState.status) {
