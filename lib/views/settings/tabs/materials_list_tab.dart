@@ -140,10 +140,10 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
         ElevatedButton.icon(
           onPressed: () => _showCreateDialog(),
           style: ElevatedButton.styleFrom(
-            backgroundColor: _matColor.withOpacity(0.1),
+            backgroundColor: _matColor.withValues(alpha: 0.1),
             foregroundColor: _matColor,
             elevation: 0,
-            side: BorderSide(color: _matColor.withOpacity(0.5)),
+            side: BorderSide(color: _matColor.withValues(alpha: 0.5)),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
@@ -188,10 +188,11 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
     return InkWell(
       // Kliknutí na řádek otevírá editaci názvu (CreateDialog v edit módu)
       onTap: () => _showCreateDialog(item: item),
-      hoverColor: Colors.white.withOpacity(0.02),
+      hoverColor: Colors.white.withValues(alpha: 0.02),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1. OZNAČENÍ
             Expanded(
@@ -201,9 +202,9 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _matColor.withOpacity(0.1),
+                      color: _matColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: _matColor.withOpacity(0.3)),
+                      border: Border.all(color: _matColor.withValues(alpha: 0.3)),
                     ),
                     child: Text(
                       item['nazev'],
@@ -237,11 +238,11 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                   // Existující tloušťky
-                   ...chips.take(8).map((t) => Container(
+                   // Existující tloušťky (všechny, bez limitu)
+                   ...chips.map((t) => Container(
                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                      decoration: BoxDecoration(
-                       color: Colors.white.withOpacity(0.05),
+                       color: Colors.white.withValues(alpha: 0.05),
                        borderRadius: BorderRadius.circular(4),
                        border: Border.all(color: Colors.white10),
                      ),
@@ -250,10 +251,6 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
                        style: const TextStyle(fontSize: 11, color: Colors.white70, fontFamily: 'monospace', fontWeight: FontWeight.bold),
                      ),
                    )),
-                   
-                   // Indikátor skrytých (pokud je jich moc)
-                   if (chips.length > 8)
-                    Text(" +${chips.length - 8}", style: const TextStyle(fontSize: 10, color: Colors.white30)),
 
                    // TLAČÍTKO PRO PŘIDÁNÍ TLOUŠŤKY (Malé +)
                    InkWell(
@@ -263,9 +260,9 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
                        margin: const EdgeInsets.only(left: 4),
                        padding: const EdgeInsets.all(2),
                        decoration: BoxDecoration(
-                         color: _matColor.withOpacity(0.2),
+                         color: _matColor.withValues(alpha: 0.2),
                          borderRadius: BorderRadius.circular(4),
-                         border: Border.all(color: _matColor.withOpacity(0.4)),
+                         border: Border.all(color: _matColor.withValues(alpha: 0.4)),
                        ),
                        child: const Icon(Icons.add, size: 14, color: _matColor),
                      ),
@@ -286,13 +283,17 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
                     color: Colors.white24,
                     tooltip: "Upravit název/alias",
                     hoverColor: Colors.white10,
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
                   ),
                   IconButton(
                     onPressed: () => _smazatMaterial(item['id']),
                     icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                    color: Colors.redAccent.withOpacity(0.5),
+                    color: Colors.redAccent.withValues(alpha: 0.5),
                     tooltip: "Smazat materiál",
-                    hoverColor: Colors.redAccent.withOpacity(0.1),
+                    hoverColor: Colors.redAccent.withValues(alpha: 0.1),
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
                   ),
                 ],
               ),
@@ -436,7 +437,7 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
                   const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(color: _matColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                    decoration: BoxDecoration(color: _matColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
                     child: Text("${currentList.length} ks", style: const TextStyle(color: _matColor, fontSize: 10, fontWeight: FontWeight.bold)),
                   )
                 ],
@@ -498,7 +499,7 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
                               runSpacing: 8,
                               children: currentList.map((t) => Chip(
                                 label: Text(t, style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-                                backgroundColor: _matColor.withOpacity(0.2),
+                                backgroundColor: _matColor.withValues(alpha: 0.2),
                                 deleteIcon: const Icon(Icons.close, size: 14, color: Colors.white54),
                                 onDeleted: () => removeThickness(t),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6), side: BorderSide.none),
@@ -568,7 +569,7 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
         children: [
           const Icon(Icons.layers_outlined, size: 48, color: Colors.white12),
           const SizedBox(height: 16),
-          Text("Katalog materiálů je prázdný", style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14)),
+          Text("Katalog materiálů je prázdný", style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14)),
           const SizedBox(height: 16),
           TextButton(
              onPressed: () => _showCreateDialog(),
