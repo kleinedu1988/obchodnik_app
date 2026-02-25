@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:excel/excel.dart'; // Nutné pro práci s typem Data a Sheet
 import 'package:path/path.dart' as p;
+
+import 'db_service.dart';
 import 'ingestion_service.dart';
 import 'excel_header_detector.dart';
 import 'customer_matcher.dart';
@@ -43,7 +46,7 @@ class EditorRow {
 
 /// Model pro mapovací profil (Definice klíčových slov pro sloupce)
 class MappingProfile {
-  String id;
+  final String id;
   String name;
   bool isDefault;
   Map<String, String> mappings; // Key: SystemField (pos, qty...), Value: "ks, pocet, qty"
@@ -55,6 +58,27 @@ class MappingProfile {
     required this.mappings,
   });
 
+  // --- OCHRANA SYSTÉMOVÉHO PROFILU ---
+  static const String systemProfileId = "system_default_01";
+  bool get isSystem => id == systemProfileId;
+
+  // Pevně zakódovaný (Hardcoded) systémový profil, obsahující to nejlepší z dřívějších
+  static MappingProfile get systemDefault {
+    return MappingProfile(
+      id: systemProfileId,
+      name: "Základní Import (Systémový)",
+      isDefault: true,
+      mappings: {
+        "pos": "poz, pozice, č., no., item, pos, position",
+        "name": "název, popis, description, name, part name, tovar, benennung",
+        "qty": "ks, počet, mn., qty, quantity, amount, pocet, mnozstvi, menge, anzahl",
+        "material": "materiál, mat, jakost, material, grade, werkstoff",
+        "thickness": "tl, tl., tloušťka, thickness, th, s, tloustka, dicke",
+        "dims": "rozměry, format, rozmer, dims"
+      },
+    );
+  }
+
   /// Vrátí všechna klíčová slova jako jeden plochý seznam pro detektor
   List<String> get allKeywords {
     final Set<String> keywords = {};
@@ -63,6 +87,25 @@ class MappingProfile {
       keywords.addAll(parts);
     }
     return keywords.toList();
+  }
+
+  // --- SERIALIZACE PRO DATABÁZI ---
+  factory MappingProfile.fromMap(Map<String, dynamic> map) {
+    return MappingProfile(
+      id: map['id'] as String,
+      name: map['name'] as String,
+      isDefault: (map['is_default'] as int) == 1,
+      mappings: Map<String, String>.from(jsonDecode(map['mappings'] as String)),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'is_default': isDefault ? 1 : 0,
+      'mappings': jsonEncode(mappings),
+    };
   }
 }
 
@@ -73,7 +116,10 @@ class MappingProfile {
 class WorkflowController extends ChangeNotifier {
   static final WorkflowController _instance = WorkflowController._internal();
   factory WorkflowController() => _instance;
-  WorkflowController._internal();
+  
+  WorkflowController._internal() {
+    _loadProfilesInit();
+  }
 
   // --- DEPENDENCIES ---
   final ExcelHeaderDetector _detector = ExcelHeaderDetector();
@@ -99,34 +145,43 @@ class WorkflowController extends ChangeNotifier {
   int activeRowIndex = -1;
 
   // --- PROFILY ---
-  List<MappingProfile> profiles = [
-    MappingProfile(
-      id: '1',
-      name: 'Standardní Import (Default)',
-      isDefault: true,
-      mappings: {
-        'pos': 'poz, pozice, č., no., item',
-        'name': 'název, popis, description, name, part name',
-        'qty': 'ks, počet, mn., qty, quantity, amount',
-        'material': 'materiál, mat, jakost, material',
-        'thickness': 'tl, tl., tloušťka, thickness, th',
-      },
-    ),
-    MappingProfile(
-      id: '2',
-      name: 'Export SAP (Německo)',
-      isDefault: false,
-      mappings: {
-        'pos': 'pos, position',
-        'name': 'benennung, name',
-        'qty': 'menge, anzahl',
-        'material': 'werkstoff',
-        'thickness': 'dicke',
-      },
-    ),
-  ];
+  List<MappingProfile> profiles = [];
 
-  MappingProfile get activeProfile => profiles.firstWhere((p) => p.isDefault, orElse: () => profiles.first);
+  Future<void> _loadProfilesInit() async {
+    await loadProfiles();
+  }
+
+  Future<void> loadProfiles() async {
+    final dbData = await DbService().getProfily();
+    
+    profiles = dbData.map((row) => MappingProfile.fromMap(row)).toList();
+
+    // KONTROLA: Obsahuje seznam náš systémový profil?
+    bool hasSystemProfile = profiles.any((p) => p.isSystem);
+
+    if (!hasSystemProfile) {
+      // Získáme náš hardcoded profil
+      final sysProfile = MappingProfile.systemDefault;
+      
+      // Uložíme ho rovnou do databáze (asynchronně)
+      DbService().saveProfil(
+        id: sysProfile.id,
+        name: sysProfile.name,
+        isDefault: sysProfile.isDefault,
+        mappings: sysProfile.mappings,
+      );
+
+      // Přidáme ho do paměti aplikace (na první místo)
+      profiles.insert(0, sysProfile);
+    }
+    notifyListeners();
+  }
+
+  MappingProfile get activeProfile {
+    // Pokud ještě nejsou načtené profily z DB, vrátíme systémový, aby to nespadlo
+    if (profiles.isEmpty) return MappingProfile.systemDefault;
+    return profiles.firstWhere((p) => p.isDefault, orElse: () => profiles.first);
+  }
 
   // --- SIDEBAR STATE MATRIX ---
   Map<int, SidebarItemState> sidebarStates = {
@@ -204,11 +259,11 @@ class WorkflowController extends ChangeNotifier {
         isVerifyingHeader = true;
         updateSidebarItem(0, status: ItemStatus.success);
       } else {
-        print("Chyba: Excel neobsahuje žádné listy.");
+        debugPrint("Chyba: Excel neobsahuje žádné listy.");
       }
 
     } catch (e) {
-      print("Chyba analýzy Excelu: $e");
+      debugPrint("Chyba analýzy Excelu: $e");
       updateSidebarItem(0, status: ItemStatus.error);
     } finally {
       setProcessing(false);
@@ -358,29 +413,53 @@ class WorkflowController extends ChangeNotifier {
   }
 
   // =============================================================
-  //  SPRÁVA PROFILŮ (CRUD)
+  //  SPRÁVA PROFILŮ (CRUD A DATABÁZE)
   // =============================================================
 
   void saveProfile(MappingProfile updatedProfile) {
+    // 1. Asynchronní uložení do databáze (neblokujeme UI)
+    DbService().saveProfil(
+      id: updatedProfile.id,
+      name: updatedProfile.name,
+      isDefault: updatedProfile.isDefault,
+      mappings: updatedProfile.mappings,
+    );
+
+    // 2. Rychlá aktualizace lokální paměti pro plynulost UI
     final index = profiles.indexWhere((p) => p.id == updatedProfile.id);
+    
+    // Pokud je nastavován jako výchozí, zrušit výchozí u všech ostatních v paměti
+    if (updatedProfile.isDefault) {
+      for (var p in profiles) {
+        if (p.id != updatedProfile.id) p.isDefault = false;
+      }
+    }
+
     if (index != -1) {
       profiles[index] = updatedProfile;
-      // Pokud je tento defaultní, zrušit default u ostatních
-      if (updatedProfile.isDefault) {
-        for (var p in profiles) {
-          if (p.id != updatedProfile.id) p.isDefault = false;
-        }
-      }
-      notifyListeners();
+    } else {
+      profiles.add(updatedProfile);
     }
-  }
-
-  void addProfile(MappingProfile newProfile) {
-    profiles.add(newProfile);
+    
     notifyListeners();
   }
 
+  void addProfile(MappingProfile newProfile) {
+    // Vytvoření a uložení je stejné jako aktualizace
+    saveProfile(newProfile);
+  }
+
   void deleteProfile(String id) {
+    // Pojistka proti smazání systémového profilu z paměti i databáze
+    if (id == MappingProfile.systemProfileId) {
+      debugPrint("Nelze smazat systémový profil.");
+      return;
+    }
+
+    // 1. Asynchronní smazání z databáze
+    DbService().deleteProfil(id);
+
+    // 2. Okamžité smazání z lokální paměti pro UI
     profiles.removeWhere((p) => p.id == id);
     notifyListeners();
   }

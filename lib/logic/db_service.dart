@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -8,8 +9,8 @@ import 'package:flutter/foundation.dart';
 class DbService {
   static Database? _db;
 
-  // VERZE 4: Přidána tabulka materialy (katalog)
-  static const int _dbVersion = 4;
+  // VERZE 5: Přidána tabulka profily (mapovací profily importu)
+  static const int _dbVersion = 5;
 
   // Singleton instance pro globální přístup
   static final DbService _instance = DbService._internal();
@@ -51,7 +52,7 @@ class DbService {
   //  DEFINICE SCHÉMATU
   // =============================================================
 
-  /// Schéma: zakaznici + operace + materialy(katalog)
+  /// Schéma: zakaznici + operace + materialy(katalog) + profily(mapování)
   Future<void> _createSchema(Database db) async {
     // 1. ZÁKAZNÍCI
     await db.execute('''
@@ -82,6 +83,16 @@ class DbService {
         nazev TEXT,
         alias TEXT,
         tloustky TEXT
+      )
+    ''');
+
+    // 4. MAPOVACÍ PROFILY
+    await db.execute('''
+      CREATE TABLE profily (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        is_default INTEGER,
+        mappings TEXT
       )
     ''');
 
@@ -118,6 +129,18 @@ class DbService {
           nazev TEXT,
           alias TEXT,
           tloustky TEXT
+        )
+      ''');
+    }
+
+    // V5: Mapovací profily
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS profily (
+          id TEXT PRIMARY KEY,
+          name TEXT,
+          is_default INTEGER,
+          mappings TEXT
         )
       ''');
     }
@@ -335,19 +358,70 @@ class DbService {
   }
 
   Future<int> getOperaceCount() async {
-  final db = await database;
-  final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM operace');
-  return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
+    final db = await database;
+    final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM operace');
+    return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
   }
 
   Future<int> getMaterialyCount() async {
-  final db = await database;
-  final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM materialy');
-  return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
+    final db = await database;
+    final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM materialy');
+    return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
   }
 
   Future<void> deleteMaterial(int id) async {
     final db = await database;
     await db.delete('materialy', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // =============================================================
+  //  MAPOVACÍ PROFILY (CRUD) - NOVÉ
+  // =============================================================
+
+  /// Načtení všech profilů z DB
+  Future<List<Map<String, dynamic>>> getProfily() async {
+    final db = await database;
+    // Výchozí se řadí první (is_default DESC), pak podle názvu
+    return db.query('profily', orderBy: 'is_default DESC, name ASC');
+  }
+
+  /// Uložení nebo aktualizace profilu
+  Future<void> saveProfil({
+    required String id,
+    required String name,
+    required bool isDefault,
+    required Map<String, String> mappings,
+  }) async {
+    final db = await database;
+
+    // Pokud nastavujeme tento profil jako výchozí, zrušíme příznak u všech ostatních
+    if (isDefault) {
+      await db.update('profily', {'is_default': 0});
+    }
+
+    final data = {
+      'id': id,
+      'name': name.trim(),
+      'is_default': isDefault ? 1 : 0, // SQLite nemá boolean, používáme 1 a 0
+      'mappings': jsonEncode(mappings), // Převod mapování na JSON text
+    };
+
+    await db.insert(
+      'profily', 
+      data, 
+      conflictAlgorithm: ConflictAlgorithm.replace // Nahradí, pokud už ID existuje (funguje jako update)
+    );
+  }
+
+  /// Smazání profilu (s ochranou systémového)
+  Future<void> deleteProfil(String id) async {
+    // POJISTKA: Systémový profil nesmí být na úrovni DB nikdy smazán!
+    if (id == 'system_default_01') {
+      debugPrint("Pokus o smazání systémového profilu byl zablokován na úrovni DB.");
+      return; 
+    }
+
+    final db = await database;
+    await db.delete('profily', where: 'id = ?', whereArgs: [id]);
   }
 }

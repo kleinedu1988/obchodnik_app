@@ -6,6 +6,18 @@ The format is based on Keep a Changelog
 and this project adheres to Semantic Versioning.
 
 ---
+
+## [0.4.8] - 2026-02-25
+
+#### Přidáno
+- **Persistentní Mapovací Profily**: Mapovací profily pro import se nyní ukládají přímo do SQLite databáze (přidána tabulka `profily` v DbService v5), což zajišťuje jejich trvalé uchování.
+- **Zabezpečený Systémový Profil**: Implementován pevně zakódovaný "Základní Import (Systémový)" profil. Tento profil funguje jako záchytný bod a nelze jej z aplikace smazat ani přejmenovat.
+- **JSON Serializace**: Přidána plná podpora převodu konfiguračních slovníků do formátu JSON pro flexibilní ukládání do databáze.
+
+#### Změněno
+- **Workflow Controller**: Přepracována správa profilů na asynchronní operace. Profily se načítají z databáze při startu aplikace a ukládají se bez blokování uživatelského rozhraní.
+- **Profiles Editor UI**: Aktualizováno uživatelské rozhraní mapovacích profilů. Přidány bezpečnostní zámky chránící systémový profil před úpravami názvu a smazáním (ikony zámku a štítu).
+
 ## [0.4.7] - 2026-02-25
 
 #### Přidáno

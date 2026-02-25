@@ -32,6 +32,23 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
   void initState() {
     super.initState();
     _nameController = TextEditingController();
+    
+    // Posloucháme změny ve WorkflowControlleru pro případ asynchronního načtení z DB
+    WorkflowController().addListener(_onProfilesChanged);
+    _initializeSelection();
+  }
+
+  void _onProfilesChanged() {
+    if (mounted) {
+      setState(() {
+        if (_selectedProfileId == null) {
+          _initializeSelection();
+        }
+      });
+    }
+  }
+
+  void _initializeSelection() {
     final profiles = WorkflowController().profiles;
     if (profiles.isNotEmpty) {
       _selectProfile(
@@ -42,6 +59,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
 
   @override
   void dispose() {
+    WorkflowController().removeListener(_onProfilesChanged);
     _nameController.dispose();
     for (var c in _mappingControllers.values) {
       c.dispose();
@@ -74,6 +92,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
   void _saveCurrentProfile() {
     final profiles = WorkflowController().profiles;
     final originalProfile = profiles.firstWhere((p) => p.id == _selectedProfileId);
+    
     final updatedProfile = MappingProfile(
       id: originalProfile.id,
       name: _nameController.text,
@@ -82,6 +101,7 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
         _mappingControllers.entries.map((e) => MapEntry(e.key, e.value.text)),
       ),
     );
+    
     WorkflowController().saveProfile(updatedProfile);
     setState(() {});
     Notifications.showSuccess(context, "PROFIL ULOŽEN");
@@ -102,10 +122,19 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
 
   void _deleteCurrentProfile() {
     final profiles = WorkflowController().profiles;
+    final activeProfile = profiles.firstWhere((p) => p.id == _selectedProfileId);
+
+    // 1. POJISTKA: Systémový profil nelze smazat
+    if (activeProfile.isSystem) {
+      Notifications.showError(context, "SYSTÉMOVÝ PROFIL NELZE SMAZAT");
+      return;
+    }
+
     if (profiles.length <= 1) {
       Notifications.showError(context, "NEMOHU SMAZAT POSLEDNÍ PROFIL");
       return;
     }
+    
     setState(() {
       WorkflowController().deleteProfile(_selectedProfileId!);
       _selectProfile(WorkflowController().profiles.first.id);
@@ -295,6 +324,19 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
                           fontFamily: 'monospace',
                         ),
                       ),
+                      if (profile.isSystem) ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.shield_rounded, size: 10, color: Colors.blueGrey),
+                        const SizedBox(width: 3),
+                        const Text(
+                          "SYSTÉMOVÝ",
+                          style: TextStyle(
+                            color: Colors.blueGrey,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                       if (profile.isDefault) ...[
                         const SizedBox(width: 8),
                         const Icon(Icons.star_rounded, size: 10, color: Colors.amber),
@@ -314,8 +356,8 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
               ),
             ),
 
-            // Smazat
-            if (!profile.isDefault)
+            // Smazat - nesmí se zobrazit pro výchozí a NESMÍ SE ZOBRAZIT PRO SYSTÉMOVÝ
+            if (!profile.isDefault && !profile.isSystem)
               IconButton(
                 onPressed: () {
                   _selectProfile(profile.id);
@@ -402,19 +444,24 @@ class _ProfilesEditorTabState extends State<ProfilesEditorTab> {
       ),
       child: Row(
         children: [
-          // Název profilu (editovatelný)
+          // Název profilu (editovatelný, kromě systémového)
           Expanded(
             child: Row(
               children: [
-                Icon(Icons.edit_note_rounded, size: 16, color: Colors.white.withOpacity(0.15)),
+                Icon(
+                  profile.isSystem ? Icons.lock_outline_rounded : Icons.edit_note_rounded, 
+                  size: 16, 
+                  color: Colors.white.withOpacity(0.15)
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextField(
                     controller: _nameController,
-                    style: const TextStyle(
+                    enabled: !profile.isSystem, // Zablokování úpravy názvu pro systémový
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: profile.isSystem ? Colors.white54 : Colors.white,
                     ),
                     decoration: const InputDecoration(
                       border: InputBorder.none,
