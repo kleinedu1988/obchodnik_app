@@ -123,6 +123,8 @@ class _MappingReviewDialogState extends State<MappingReviewDialog> {
                 const SizedBox(height: 4),
                 Text(needsAttention ? "KONTROLA NUTNÁ" : "NAMAPOVÁNO", 
                   style: TextStyle(color: statusColor.withOpacity(0.7), fontSize: 9, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                _buildSourceBadge(match.source),
               ],
             ),
           ),
@@ -166,6 +168,26 @@ class _MappingReviewDialogState extends State<MappingReviewDialog> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSourceBadge(String source) {
+    final normalized = source.trim().toLowerCase();
+    final isProfile = normalized == 'customer profile';
+    final label = isProfile ? 'ZDROJ: CUSTOMER PROFILE' : (normalized == 'smart heuristic' ? 'ZDROJ: SMART HEURISTIC' : 'ZDROJ: RUČNÍ');
+    final color = isProfile ? Colors.cyanAccent : (normalized == 'smart heuristic' ? Colors.amberAccent : Colors.white24);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color.withOpacity(0.9), fontSize: 8, fontWeight: FontWeight.w700, letterSpacing: 0.4),
       ),
     );
   }

@@ -17,12 +17,14 @@ class MappingMatch {
   final String? excelColumn;
   final double confidence;
   final MappingConfidence level;
+  final String source;
 
   MappingMatch({
     required this.systemField,
     this.excelColumn,
     required this.confidence,
     required this.level,
+    this.source = 'smart heuristic',
   });
 }
 
@@ -53,7 +55,7 @@ class SmartMappingEngine {
   // VÁŠ PRINCIP: Pattern Detection (RegExp)
   final Map<String, RegExp> _contentPatterns = {
     'part_number': RegExp(r'^[a-zA-Z0-9/_-]{6,}$'), // PN: 6+ znaků, technické symboly
-    'quantity': RegExp(r'^\d+(\s?ks)?$'),           // Qty: Číslo, volitelně "ks"
+    'quantity': RegExp(r'^\d+(\s?ks)?$'),          // Qty: Číslo, volitelně "ks"
     'thickness': RegExp(r'^\d{1,2}([,.]\d+)?$'),    // Thick: Krátké číslo/desetinné
     'material': RegExp(r'(s235|s355|11\s?373|11\s?523|nerez|hlinik|alu|dc01)', caseSensitive: false),
   };
@@ -195,6 +197,7 @@ class SmartMappingEngine {
               excelColumn: best.excelColumn,
               confidence: best.score,
               level: level,
+              source: 'smart heuristic',
             ));
         }
       }
@@ -220,7 +223,8 @@ class SmartMappingEngine {
         systemField: field, 
         excelColumn: null, 
         confidence: 0.0, 
-        level: MappingConfidence.none
+        level: MappingConfidence.none,
+        source: 'smart heuristic',
       );
     }).toList();
   }

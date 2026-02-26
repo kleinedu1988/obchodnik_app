@@ -7,6 +7,7 @@ import 'db_service.dart';
 import 'ingestion_service.dart';
 import 'excel_header_detector.dart';
 import 'customer_matcher.dart';
+import 'mapping_profile_resolver.dart';
 
 // =============================================================
 //  MODELY PRO SIDEBAR A EDITOR
@@ -124,6 +125,7 @@ class WorkflowController extends ChangeNotifier {
   // --- DEPENDENCIES ---
   final ExcelHeaderDetector _detector = ExcelHeaderDetector();
   final CustomerMatcher _customerMatcher = CustomerMatcher();
+  final MappingProfileResolver _mappingProfileResolver = MappingProfileResolver();
 
   // --- GLOBÁLNÍ STAVY PROCESU ---
   bool isEditorUnlocked = false; 
@@ -134,12 +136,14 @@ class WorkflowController extends ChangeNotifier {
   bool isVerifyingHeader = false;
   bool isMatchingCustomer = false;
   bool isMappingPending = false;
+  bool wasCustomerProfileAutoApplied = false;
 
   HeaderDetectionResult? headerResult;
   CustomerMatchResult? pendingCustomerResult;
   Map<String, dynamic>? assignedCustomer;
   String? customerProfileUid;
   Map<String, String>? customerProfileMappings;
+  ResolvedMapping? resolvedMapping;
 
   // --- DATA ---
   IngestionResult? lastIngestion;
@@ -340,34 +344,69 @@ class WorkflowController extends ChangeNotifier {
     assignedCustomer = customer;
     customerProfileUid = null;
     customerProfileMappings = null;
+    resolvedMapping = null;
+    wasCustomerProfileAutoApplied = false;
 
-    if (customer != null) {
-      final profile = await _loadOrCreateCustomerProfile(customer);
-      customerProfileUid = profile['profile_uid']?.toString();
-      customerProfileMappings = _decodeMappings(profile['mappings']);
+    final resolved = await _mappingProfileResolver.resolve(
+      customerId: customer?['id']?.toString(),
+      customerProfileUid: customer?['customer_profile_uid']?.toString(),
+      matchedProfileUid: pendingCustomerResult?.profileUid,
+      defaultProfile: MappingProfile.systemDefault.mappings,
+    );
+
+    resolvedMapping = resolved;
+    customerProfileUid = resolved.profileUid;
+    customerProfileMappings = Map<String, String>.from(resolved.mappings);
+
+    if (customer != null && customerProfileUid == null) {
+      customerProfileUid = await _createCustomerProfileForCustomer(
+        customer: customer,
+        initialMappings: customerProfileMappings ?? MappingProfile.systemDefault.mappings,
+      );
+      resolvedMapping = ResolvedMapping(
+        profileUid: customerProfileUid,
+        mappings: customerProfileMappings ?? MappingProfile.systemDefault.mappings,
+        source: resolved.source,
+        confidence: resolved.confidence,
+        isAutoApplied: resolved.isAutoApplied,
+      );
+    }
+
+    if (customer != null && customerProfileUid != null && customer['id'] != null) {
+      await DbService().updateCustomerProfileUid(customer['id'] as int, customerProfileUid);
+      customer['customer_profile_uid'] = customerProfileUid;
     }
 
     isMatchingCustomer = false;
-    isMappingPending = true;
+    final hasCompleteProfile = _hasRequiredMappingForCurrentDoc(customerProfileMappings);
+    isMappingPending = !hasCompleteProfile;
+    wasCustomerProfileAutoApplied = hasCompleteProfile;
     notifyListeners();
   }
 
-  Future<Map<String, dynamic>> _loadOrCreateCustomerProfile(Map<String, dynamic> customer) async {
-    final existing = await DbService().getCustomerProfile(
-      profileUid: customer['customer_profile_uid']?.toString(),
-      customerId: customer['id'],
-    );
+  bool _hasRequiredMappingForCurrentDoc(Map<String, String>? mappings) {
+    if (mappings == null || mappings.isEmpty) return false;
 
-    if (existing != null) {
-      final uid = existing['profile_uid']?.toString();
-      if (uid != null && uid.isNotEmpty && customer['id'] != null) {
-        await DbService().updateCustomerProfileUid(customer['id'] as int, uid);
-      }
-      return existing;
+    final requiredFields = <String>{'name', 'qty'};
+    if (docType == DocType.order) {
+      requiredFields.add('material');
     }
 
+    bool hasValueForField(String field) {
+      final raw = mappings[field]?.trim() ?? '';
+      if (raw.isEmpty) return false;
+      return raw.split(',').any((token) => token.trim().isNotEmpty);
+    }
+
+    return requiredFields.every(hasValueForField);
+  }
+
+  Future<String> _createCustomerProfileForCustomer({
+    required Map<String, dynamic> customer,
+    required Map<String, String> initialMappings,
+  }) async {
     final generatedUid = 'cp_${DateTime.now().microsecondsSinceEpoch}';
-    final defaults = Map<String, String>.from(MappingProfile.systemDefault.mappings);
+    final defaults = Map<String, String>.from(initialMappings);
     final customerId = customer['id']?.toString() ?? '';
 
     await DbService().saveCustomerProfileRaw(
@@ -376,37 +415,12 @@ class WorkflowController extends ChangeNotifier {
       customerName: customer['nazev']?.toString() ?? 'Neznámý zákazník',
       mappings: defaults,
     );
-
-    if (customer['id'] != null) {
-      await DbService().updateCustomerProfileUid(customer['id'] as int, generatedUid);
-      customer['customer_profile_uid'] = generatedUid;
-    }
-
-    return {
-      'profile_uid': generatedUid,
-      'customer_id': customerId,
-      'display_name': customer['nazev']?.toString() ?? '',
-      'mappings': jsonEncode(defaults),
-    };
-  }
-
-  Map<String, String> _decodeMappings(dynamic raw) {
-    if (raw == null) return {};
-    if (raw is String) {
-      try {
-        return Map<String, String>.from(jsonDecode(raw));
-      } catch (_) {
-        return {};
-      }
-    }
-    if (raw is Map) {
-      return raw.map((key, value) => MapEntry(key.toString(), value.toString()));
-    }
-    return {};
+    return generatedUid;
   }
 
   void completeMappingReview() {
     isMappingPending = false;
+    wasCustomerProfileAutoApplied = false;
     notifyListeners();
   }
 
@@ -465,6 +479,8 @@ class WorkflowController extends ChangeNotifier {
     assignedCustomer = null;
     customerProfileUid = null;
     customerProfileMappings = null;
+    resolvedMapping = null;
+    wasCustomerProfileAutoApplied = false;
 
     sidebarStates = {
       0: const SidebarItemState(isEnabled: true, isProcessing: true),

@@ -11,6 +11,7 @@ import '../../../logic/notifications.dart';
 import '../../../logic/excel_header_detector.dart';
 import '../../../logic/customer_matcher.dart';
 import '../../../logic/db_service.dart';
+import '../../../logic/mapping_profile_resolver.dart';
 import '../../../logic/smart_mapping_engine.dart';
 import 'mapping_review_dialog.dart';
 
@@ -96,8 +97,14 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
 
     // Trigger pro otevření dialogu kontroly mapování
     if (_workflow.isMappingPending && !_mappingDialogVisible) {
-      _mappingDialogVisible = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _openMappingReviewDialog());
+      final source = _workflow.resolvedMapping?.source;
+      final shouldOpenDialog = source == ResolvedMappingSource.defaultProfile;
+      if (shouldOpenDialog) {
+        _mappingDialogVisible = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _openMappingReviewDialog());
+      } else {
+        _workflow.completeMappingReview();
+      }
     }
   }
 
@@ -639,6 +646,17 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
   // ===========================================================================
 
   Widget _buildMappingLoadingState() {
+    final source = _workflow.resolvedMapping?.source;
+    String sourceLabel = 'Používám obecný výchozí profil.';
+
+    if (source == ResolvedMappingSource.explicitCustomerProfile) {
+      sourceLabel = 'Používám explicitně přiřazený profil zákazníka.';
+    } else if (source == ResolvedMappingSource.matcherProfile) {
+      sourceLabel = 'Používám profil doporučený matcherem.';
+    } else if (source == ResolvedMappingSource.customerHistory) {
+      sourceLabel = 'Používám poslední profil zákazníka.';
+    }
+
     return Container(
       key: const ValueKey('mapping_loading'),
       width: 420,
@@ -648,15 +666,15 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _borderColor),
       ),
-      child: const Column(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(color: _accentColor),
-          SizedBox(height: 16),
+          const CircularProgressIndicator(color: _accentColor),
+          const SizedBox(height: 16),
           Text(
-            'Připravuji kontrolu mapování pro vybraného zákazníka...',
+            sourceLabel,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white70, fontSize: 12),
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ],
       ),
@@ -667,7 +685,12 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
     if (!mounted) return;
 
     final headers = _workflow.headerResult?.cleanedHeaders ?? <String>[];
-    final matches = _buildMappingMatches(headers, _workflow.customerProfileMappings ?? {});
+    final previewRows = _workflow.headerResult?.previewRows ?? <List<String>>[];
+    final matches = _buildMappingMatches(
+      headers,
+      previewRows,
+      _workflow.customerProfileMappings ?? {},
+    );
 
     final result = await showDialog<Map<String, String?>>(
       context: context,
@@ -679,30 +702,50 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
     );
 
     if (result != null && _workflow.customerProfileUid != null && _workflow.assignedCustomer != null) {
-      final mapped = result.map((key, value) => MapEntry(key, value ?? ''));
-      
       // Fix: Zajištění, že ID je předáváno jako String, pokud ho saveCustomerProfileRaw očekává
       final customerId = _workflow.assignedCustomer!['id']?.toString() ?? '';
       final customerName = _workflow.assignedCustomer!['nazev']?.toString() ?? '';
+      final mappingEngine = SmartMappingEngine();
+      final canonicalMappings = <String, String>{};
+
+      result.forEach((systemField, selectedHeader) {
+        final header = (selectedHeader ?? '').trim();
+        if (header.isEmpty) {
+          canonicalMappings[systemField] = '';
+          return;
+        }
+
+        final tokens = <String>{header};
+        final normalizedToken = mappingEngine.normalize(header);
+        if (normalizedToken.isNotEmpty && normalizedToken != header.toLowerCase()) {
+          tokens.add(normalizedToken);
+        }
+        canonicalMappings[systemField] = tokens.join(', ');
+      });
 
       await DbService().saveCustomerProfileRaw(
         uid: _workflow.customerProfileUid!,
         customerId: customerId,
         customerName: customerName,
-        mappings: mapped,
+        mappings: canonicalMappings,
       );
-      _workflow.customerProfileMappings = mapped;
+      _workflow.customerProfileMappings = canonicalMappings;
     }
 
     _mappingDialogVisible = false;
     _workflow.completeMappingReview();
   }
 
-  List<MappingMatch> _buildMappingMatches(List<String> headers, Map<String, String> prefill) {
+  List<MappingMatch> _buildMappingMatches(
+    List<String> headers,
+    List<List<String>> previewRows,
+    Map<String, String> prefill,
+  ) {
     const fields = ['pos', 'name', 'qty', 'material', 'thickness', 'dims'];
     final normalizedHeaders = headers.map((e) => e.trim().toLowerCase()).toList();
+    final exactMatchesByField = <String, MappingMatch>{};
 
-    return fields.map((field) {
+    for (final field in fields) {
       final csv = prefill[field] ?? '';
       String? matched;
       for (final token in csv.split(',')) {
@@ -714,11 +757,63 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
           break;
         }
       }
+
+      if (matched != null) {
+        exactMatchesByField[field] = MappingMatch(
+          systemField: field,
+          excelColumn: matched,
+          confidence: 0.95,
+          level: MappingConfidence.high,
+          source: 'customer profile',
+        );
+      }
+    }
+
+    final heuristicByField = <String, MappingMatch>{};
+    if (headers.isNotEmpty) {
+      final smartMatches = SmartMappingEngine().analyzeHeadersWithData(headers, previewRows);
+      const fieldAliases = {
+        'part_number': 'pos',
+        'quantity': 'qty',
+      };
+
+      for (final match in smartMatches) {
+        final targetField = fieldAliases[match.systemField] ?? match.systemField;
+        if (!fields.contains(targetField)) continue;
+        if (match.excelColumn == null) continue;
+        heuristicByField[targetField] = MappingMatch(
+          systemField: targetField,
+          excelColumn: match.excelColumn,
+          confidence: match.confidence,
+          level: match.level,
+          source: 'smart heuristic',
+        );
+      }
+    }
+
+    return fields.map((field) {
+      final exact = exactMatchesByField[field];
+      if (exact != null) return exact;
+
+      final heuristic = heuristicByField[field];
+      if (heuristic != null) {
+        final shouldAutofill =
+            heuristic.level == MappingConfidence.high || heuristic.level == MappingConfidence.medium;
+        return MappingMatch(
+          systemField: field,
+          excelColumn: shouldAutofill ? heuristic.excelColumn : null,
+          confidence: heuristic.confidence,
+          level: heuristic.level,
+          source: heuristic.source,
+        );
+      }
+
       return MappingMatch(
         systemField: field,
-        excelColumn: matched,
-        confidence: matched != null ? 0.95 : 0.0,
-        level: matched != null ? MappingConfidence.high : MappingConfidence.none,
+        excelColumn: null,
+        confidence: 0.0,
+        level: MappingConfidence.none,
+        source: 'manual',
       );
     }).toList();
   }
@@ -749,6 +844,28 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
             style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1)),
           const SizedBox(height: 8),
           Text(result.summaryLine, style: const TextStyle(color: _textDim, fontSize: 11, fontWeight: FontWeight.bold)),
+          if (_workflow.wasCustomerProfileAutoApplied) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: _successColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: _successColor.withValues(alpha: 0.45)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.verified_outlined, color: _successColor, size: 14),
+                  SizedBox(width: 8),
+                  Text(
+                    'Použit uložený zákaznický profil automaticky',
+                    style: TextStyle(color: _successColor, fontSize: 11, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 48),
           const Text("Zvolte typ zpracování:", style: TextStyle(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 32),

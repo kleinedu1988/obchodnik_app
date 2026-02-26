@@ -7,6 +7,19 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.5.5] - 2026-02-26
+
+#### Přidáno
+- **Hierarchický Resolver Profilů (`MappingProfileResolver`)**: Nová samostatná vrstva, která čistě a logicky určuje prioritu mapovacích profilů: 1. Explicitní profil zákazníka, 2. Profil od AI matcheru, 3. Historický profil zákazníka, 4. Výchozí systémový profil.
+- **Trasování původu mapování (`source`)**: Algoritmy (`SmartMappingEngine`) a modely nyní přesně evidují, z jakého zdroje dané mapování pochází.
+- **Vizuální štítky (Badges)**: V dialogu kontroly mapování (`MappingReviewDialog`) byly přidány barevné štítky, které uživateli jasně ukazují, zda sloupec namapoval uložený profil, chytrá heuristika nebo jde o manuální zadání.
+- **Dynamický stav načítání**: Průvodce importem při načítání mapování nově jasně textově komunikuje, jaký typ profilu se právě aplikuje (např. "Používám poslední profil zákazníka.").
+
+#### Změněno
+- **Automatické přeskakování (Auto-Apply)**: Zásadní zlepšení UX! Pokud systém s jistotou detekuje zákazníka a nalezne jeho existující mapovací profil, rovnou jej aplikuje a přeskočí zdržující dialog kontroly mapování. Dialog se nyní otevře pouze u zcela nových zákazníků (fallback na výchozí profil).
+- **Refaktorizace `WorkflowController`**: Odstraněn nepřehledný "špagetový" kód pro vyhodnocování profilů. Logika je nyní delegována na čistý objektový přístup pomocí nového resolveru.
+- **Kanonická normalizace klíčových slov**: Při potvrzení mapování v dialogu se nyní automaticky generují tzv. kanonická mapování, která propojují surový název sloupce s jeho normalizovanou formou (bez diakritiky atd.), čímž se zvyšuje robustnost při budoucích importech.
+
 ## [0.5.4] - 2026-02-26
 
 #### Přidáno
