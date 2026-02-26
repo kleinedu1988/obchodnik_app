@@ -7,6 +7,35 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.5.4] - 2026-02-26
+
+#### Přidáno
+- **Smart Upsert Zákazníků (DB v7)**: Zaveden stabilní `customer_unique_key`. Původní metoda mazání a nahrazování dat ("wipe and replace") při importu hlavního ceníku z CRM byla nahrazena chytrým batch upsertem. Nyní se záznamy pouze doplňují či aktualizují.
+
+#### Změněno
+- **Výkonnostní revoluce v AI Matcheru**: Modul `CustomerMatcher` byl kompletně přepsán na používání jednorázové in-memory mezipaměti (cache). Odstraněním tisíců zbytečných SQL dotazů v cyklech došlo k extrémnímu zrychlení párovacího procesu i u těch největších importů.
+- **Plynulý Editor Profilů (`CustomerProfilesTab`)**: Opraveno masivní zasekávání UI, které způsoboval Dropdown s 5000+ zákazníky. Plné načítání bylo nahrazeno efektivním vyhledávacím polem se stránkováním (pagination) a zpožděním dotazu (debouncing).
+- **Dynamické Isolates (Smart Threads)**: Parsování a přesuny výpočtů do vláken na pozadí v `DbService` se nyní aktivují chytře – až po překročení objemové hranice (2000 řádků). Běžné menší dotazy se tak vyřídí bleskově v hlavním vlákně bez systémového zdržení (overhead).
+- **Chytré SQL vyhledávání**: Metoda `getZakaznici` nově detekuje, zda uživatel hledá číselný identifikátor (IČ/ID) a aplikuje efektivnější prefixové hledání. Rozhraní `IngestionView` zároveň optimalizuje dotazy a ignoruje hledání kratší než 2 znaky.
+
+## [0.5.3] - 2026-02-26
+
+#### Přidáno
+- **Správa zákaznických profilů**: Plně funkční záložka `CustomerProfilesTab` pro vytváření, editaci a mazání individuálních mapovacích profilů pro konkrétní zákazníky.
+- **Smart Mapping Review**: Do průvodce importem (`IngestionView`) byl přidán mezikrok, který po identifikaci firmy zobrazí dialog s návrhem mapování sloupců na základě uložených zvyklostí zákazníka. Jakákoliv úprava se rovnou uloží zpět do jeho profilu.
+- **Rozšířená AI identifikace**: Modul `CustomerMatcher` nyní využívá databázové profily k přesnější identifikaci. Porovnává nejen IČO a název, ale i definované aliasy a vážená klíčová slova uložená v databázi.
+- **Stabilní UID**: Každý zákazník a jeho profil jsou nyní pevně svázáni pomocí `customer_profile_uid`, což zabraňuje rozpadu vazeb při opakovaných importech hlavního seznamu firem.
+
+#### Změněno
+- **Optimalizace výkonu UI (Isolates)**: Výpočetně náročné parsování rozsáhlých databázových odpovědí (např. 10 000 zákazníků) v `DbService` bylo přesunuto do vláken v pozadí pomocí `Isolate.run()`. UI aplikace tak zůstává perfektně plynulé (bez tzv. Jitteru).
+- **Zrychlení hromadného importu**: Proces přidělování a generování unikátních klíčů pro nová i existující data je plně oddelegován na vlákna v pozadí.
+- **Smart Dropdown v Profilech**: Rozevírací seznam zákazníků v editoru profilů byl přepsán z plného načtení (které způsobovalo mrznutí) na vyhledávací `TextField` kombinovaný s dynamicky filtrovaným Dropdownem. Výrazné snížení zátěže na renderování ve Flutteru.
+- **Rozšířené Workflow**: Zásadně přepracován `WorkflowController` – nově umí pracovat s pozastavením pro ověření mapování (`isMappingPending`) a asynchronně načítat historická mapování při výběru zákazníka.
+
+#### Opraveno
+- **Smazání profilu (Typová chyba)**: Opraven pád aplikace při pokusu o smazání profilu zákazníka, kde docházelo k chybnému předání typu `int` (z `active.id`) do parametru požadujícího `String` (`profileUid`).
+- **Obnova diagnostiky**: Vráceny chybějící metody `getOperaceCount` a `getMaterialyCount` do `DbService`, které se při integraci asynchronního kódu ztratily a způsobovaly rozbití `DbStatusTab`.
+
 ## [0.5.2] - 2026-02-25
 
 #### Změněno

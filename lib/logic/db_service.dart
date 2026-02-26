@@ -11,9 +11,10 @@ import 'package:mrb_obchodnik/logic/customer_profile.dart';
 /// Zajišťuje bleskové vyhledávání a optimalizovanou práci na pozadí (Isolates).
 class DbService {
   static Database? _db;
+  static const int _isolateThresholdRows = 2000;
 
-  // VERZE 6: Stabilní customer_profile_uid + customer_profiles mapování
-  static const int _dbVersion = 6;
+  // VERZE 7: Stabilní unique key pro upsert zákazníků
+  static const int _dbVersion = 7;
   static final Random _random = Random();
 
   // Singleton instance pro globální přístup
@@ -60,6 +61,7 @@ class DbService {
       CREATE TABLE zakaznici (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         externi_id TEXT,
+        customer_unique_key TEXT,
         nazev TEXT,
         ic TEXT,
         customer_profile_uid TEXT,
@@ -156,6 +158,33 @@ class DbService {
       ''');
     }
 
+    if (oldVersion < 7) {
+      try {
+        await db.execute('ALTER TABLE zakaznici ADD COLUMN customer_unique_key TEXT');
+      } catch (_) {
+        debugPrint('Poznámka: Sloupec customer_unique_key pravděpodobně již existuje.');
+      }
+
+      final rows = await db.query('zakaznici', columns: ['id', 'externi_id', 'ic', 'nazev']);
+      final batch = db.batch();
+      for (final row in rows) {
+        final key = _buildCustomerUniqueKey(
+          externiId: row['externi_id']?.toString(),
+          ic: row['ic']?.toString(),
+          nazev: row['nazev']?.toString(),
+        );
+        if (key == null) continue;
+
+        batch.update(
+          'zakaznici',
+          {'customer_unique_key': key},
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
+      await batch.commit(noResult: true);
+    }
+
     await _ensureIndexes(db);
   }
 
@@ -164,6 +193,7 @@ class DbService {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_ic ON zakaznici (ic)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_folder ON zakaznici (folder_path)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_extid ON zakaznici (externi_id)');
+    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_zakaznici_unique_key ON zakaznici (customer_unique_key) WHERE customer_unique_key IS NOT NULL');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_profile_uid ON zakaznici (customer_profile_uid)');
     
     await db.execute('CREATE INDEX IF NOT EXISTS idx_operace_kod ON operace (kod)');
@@ -226,10 +256,22 @@ class DbService {
 
     final existingProfiles = await _loadExistingProfileUidMap(db);
     
-    // PŘESUN VÝPOČTU UID DO VLÁKNA NA POZADÍ (zabrání mrznutí při tisících řádků)
-    final processedData = await Isolate.run(() {
+    List<Map<String, dynamic>> processData() {
       final random = Random();
       final generatedInRun = <String>{};
+
+      String? buildUniqueKey(Map<String, dynamic> row) {
+        final extId = row['externi_id']?.toString().trim();
+        if (extId != null && extId.isNotEmpty) return 'ext:$extId';
+
+        final ic = row['ic']?.toString().trim();
+        if (ic != null && ic.isNotEmpty) return 'ic:$ic';
+
+        final nazev = row['nazev']?.toString().trim().toLowerCase();
+        if (nazev != null && nazev.isNotEmpty) return 'name:$nazev';
+
+        return null;
+      }
 
       String generateUid() {
         final now = DateTime.now().microsecondsSinceEpoch;
@@ -256,30 +298,96 @@ class DbService {
         }
 
         row['customer_profile_uid'] = uid;
+        row['customer_unique_key'] = buildUniqueKey(row);
         generatedInRun.add(uid);
       }
       return data;
-    });
+    }
+
+    // PŘESUN VÝPOČTU UID DO VLÁKNA NA POZADÍ jen pro velké importy
+    final processedData = data.length > _isolateThresholdRows
+        ? await Isolate.run(processData)
+        : processData();
 
     // SAMOTNÝ ZÁPIS DO DB
     await db.transaction((txn) async {
-      await txn.delete('zakaznici'); 
-      await txn.delete('customer_profiles');
-
-      final batch = txn.batch();
       final total = processedData.length;
 
+      final importedKeys = processedData
+          .map((row) => row['customer_unique_key']?.toString())
+          .whereType<String>()
+          .where((key) => key.isNotEmpty)
+          .toSet();
+
+      final existingRows = importedKeys.isEmpty
+          ? <Map<String, Object?>>[]
+          : await txn.query(
+              'zakaznici',
+              columns: ['id', 'customer_unique_key', 'externi_id', 'nazev', 'ic', 'customer_profile_uid', 'timestamp'],
+              where: 'customer_unique_key IN (${List.filled(importedKeys.length, '?').join(',')})',
+              whereArgs: importedKeys.toList(),
+            );
+
+      final existingByKey = {
+        for (final row in existingRows)
+          row['customer_unique_key'].toString(): row,
+      };
+
+      int inserted = 0;
+      int updated = 0;
+      int unchanged = 0;
+      final touchedCustomerIds = <int>{};
+      const progressChunk = 750;
+
       for (int i = 0; i < total; i++) {
-        batch.insert('zakaznici', processedData[i]);
-        if (i % 300 == 0 && i != 0) {
-          onProgress(i / total);
+        final row = Map<String, Object?>.from(processedData[i]);
+        final uniqueKey = row['customer_unique_key']?.toString();
+
+        if (uniqueKey == null || uniqueKey.isEmpty) {
+          final newId = await txn.insert('zakaznici', row);
+          touchedCustomerIds.add(newId);
+          inserted++;
+        } else {
+          final existing = existingByKey[uniqueKey];
+          if (existing == null) {
+            final newId = await txn.insert(
+              'zakaznici',
+              row,
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+            touchedCustomerIds.add(newId);
+            inserted++;
+          } else {
+            final sameData = _customerRowsEqual(existing, row);
+            final existingId = existing['id'] as int?;
+
+            if (sameData && existingId != null) {
+              unchanged++;
+              touchedCustomerIds.add(existingId);
+            } else {
+              if (existingId != null) {
+                await txn.update('zakaznici', row, where: 'id = ?', whereArgs: [existingId]);
+                touchedCustomerIds.add(existingId);
+              } else {
+                final newId = await txn.insert(
+                  'zakaznici',
+                  row,
+                  conflictAlgorithm: ConflictAlgorithm.replace,
+                );
+                touchedCustomerIds.add(newId);
+              }
+              updated++;
+            }
+          }
+        }
+
+        if ((i + 1) % progressChunk == 0) {
+          onProgress((i + 1) / total);
         }
       }
 
-      debugPrint("Spouštím batch commit pro $total záznamů...");
-      await batch.commit(noResult: true);
-      
-      await _rebuildCustomerProfiles(txn);
+      await _rebuildCustomerProfilesForCustomers(txn, touchedCustomerIds);
+      debugPrint('Import zákazníků hotov: inserted=$inserted, updated=$updated, unchanged=$unchanged, total=$total');
     });
 
     onProgress(1.0);
@@ -292,8 +400,7 @@ class DbService {
       where: 'customer_profile_uid IS NOT NULL AND customer_profile_uid != ""',
     );
 
-    // Parsování probíhá na pozadí, jelikož mapování může být náročné
-    return await Isolate.run(() {
+    Map<String, String> buildProfileMap() {
       final result = <String, String>{};
       for (final row in rows) {
         final uid = row['customer_profile_uid']?.toString();
@@ -306,14 +413,29 @@ class DbService {
         if (ic != null && ic.isNotEmpty) result.putIfAbsent('ic:$ic', () => uid);
       }
       return result;
-    });
+    }
+
+    // Parsování probíhá na pozadí jen při velkém množství řádků
+    return rows.length > _isolateThresholdRows
+        ? await Isolate.run(buildProfileMap)
+        : buildProfileMap();
   }
 
-  Future<void> _rebuildCustomerProfiles(Transaction txn) async {
+  Future<void> _rebuildCustomerProfilesForCustomers(Transaction txn, Set<int> customerIds) async {
+    if (customerIds.isEmpty) return;
+
+    final placeholders = List.filled(customerIds.length, '?').join(',');
+    await txn.delete(
+      'customer_profiles',
+      where: 'customer_id IN ($placeholders)',
+      whereArgs: customerIds.toList(),
+    );
+
     final customers = await txn.query(
       'zakaznici',
       columns: ['id', 'externi_id', 'nazev', 'ic', 'customer_profile_uid'],
-      where: 'customer_profile_uid IS NOT NULL AND customer_profile_uid != ""',
+      where: 'customer_profile_uid IS NOT NULL AND customer_profile_uid != "" AND id IN ($placeholders)',
+      whereArgs: customerIds.toList(),
     );
 
     final now = DateTime.now().toIso8601String();
@@ -345,6 +467,35 @@ class DbService {
     await batch.commit(noResult: true);
   }
 
+  static bool _customerRowsEqual(Map<String, Object?> existing, Map<String, Object?> incoming) {
+    const keys = ['externi_id', 'nazev', 'ic', 'customer_profile_uid', 'timestamp', 'customer_unique_key'];
+    for (final key in keys) {
+      final oldValue = existing[key]?.toString().trim();
+      final newValue = incoming[key]?.toString().trim();
+      if ((oldValue ?? '') != (newValue ?? '')) return false;
+    }
+    return true;
+  }
+
+  static String? _buildCustomerUniqueKey({String? externiId, String? ic, String? nazev}) {
+    final normalizedExterniId = externiId?.trim();
+    if (normalizedExterniId != null && normalizedExterniId.isNotEmpty) {
+      return 'ext:$normalizedExterniId';
+    }
+
+    final normalizedIc = ic?.trim();
+    if (normalizedIc != null && normalizedIc.isNotEmpty) {
+      return 'ic:$normalizedIc';
+    }
+
+    final normalizedNazev = nazev?.trim().toLowerCase();
+    if (normalizedNazev != null && normalizedNazev.isNotEmpty) {
+      return 'name:$normalizedNazev';
+    }
+
+    return null;
+  }
+
   // =============================================================
   //  ZÁKAZNÍCI (Přesun parsování seznamů na pozadí)
   // =============================================================
@@ -356,6 +507,8 @@ class DbService {
     int offset = 0,
   }) async {
     final db = await database;
+    final normalizedQuery = query.trim();
+    final isNumericQuery = RegExp(r'^\d+$').hasMatch(normalizedQuery);
 
     String sql = 'SELECT * FROM zakaznici WHERE 1=1';
     final args = <dynamic>[];
@@ -364,9 +517,16 @@ class DbService {
       sql += ' AND (folder_path IS NULL OR folder_path = "")';
     }
 
-    if (query.isNotEmpty) {
-      sql += ' AND (nazev LIKE ? OR ic LIKE ? OR externi_id LIKE ?)';
-      args.addAll(['%$query%', '%$query%', '%$query%']);
+    if (normalizedQuery.isNotEmpty) {
+      if (isNumericQuery) {
+        // Číselný vstup: preferuj prefix vyhledávání v IC / externím ID.
+        sql += ' AND (ic LIKE ? OR externi_id LIKE ?)';
+        args.addAll(['$normalizedQuery%', '$normalizedQuery%']);
+      } else {
+        // Textový vstup: hledej pouze v názvu.
+        sql += ' AND nazev LIKE ?';
+        args.add('%$normalizedQuery%');
+      }
     }
 
     sql += ' ORDER BY nazev ASC LIMIT ? OFFSET ?';
@@ -374,10 +534,7 @@ class DbService {
 
     final rawRows = await db.rawQuery(sql, args);
 
-    // DELEGACE: Vytvoření modifikovatelné List<Map> pro stovky/tisíce řádků proběhne na pozadí
-    return await Isolate.run(() {
-      return rawRows.map((e) => Map<String, dynamic>.from(e)).toList();
-    });
+    return rawRows.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   Future<void> updateFolderPath(int id, String newPath) async {
@@ -515,10 +672,14 @@ class DbService {
     try {
       final rawRows = await db.query('customer_profiles', orderBy: 'display_name COLLATE NOCASE ASC');
       
-      // DELEGACE: Odloučení složitého dekódování JSON klíčových slov do pozadí
-      return await Isolate.run(() {
+      List<CustomerProfile> parseProfiles() {
         return rawRows.map((e) => CustomerProfile.fromDbMap(e)).toList();
-      });
+      }
+
+      // DELEGACE: Odloučení složitého dekódování JSON klíčových slov do pozadí jen pro velké dávky
+      return rawRows.length > _isolateThresholdRows
+          ? await Isolate.run(parseProfiles)
+          : parseProfiles();
     } catch (e) {
       debugPrint("DB Error [getCustomerProfiles]: $e");
       return const [];
@@ -529,7 +690,7 @@ class DbService {
     final db = await database;
     try {
       final rows = await db.query('customer_profiles', limit: limit);
-      return await Isolate.run(() => rows.map((e) => Map<String, dynamic>.from(e)).toList());
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
       return const [];
     }

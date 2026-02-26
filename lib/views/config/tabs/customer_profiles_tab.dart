@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mrb_obchodnik/logic/customer_profile.dart';
 import 'package:mrb_obchodnik/logic/db_service.dart';
@@ -27,12 +29,20 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
   ];
 
   final List<CustomerProfile> _profiles = [];
-  final List<Map<String, dynamic>> _customers = [];
-  List<Map<String, dynamic>> _filteredCustomers = []; // Optimalizace pro vyhledávání
+  final Map<int, Map<String, dynamic>> _customerCache = {};
+  final List<Map<String, dynamic>> _customerSearchResults = [];
 
   int? _selectedProfileId;
   int? _linkedCustomerId;
+  Map<String, dynamic>? _selectedCustomer;
   bool _isLoading = false;
+  bool _isCustomerSearchLoading = false;
+  bool _hasMoreCustomerResults = false;
+
+  static const int _customerSearchPageSize = 20;
+  int _customerSearchOffset = 0;
+  String _customerSearchQuery = '';
+  Timer? _customerSearchDebounce;
 
   late TextEditingController _displayNameController;
   late TextEditingController _icoController;
@@ -62,6 +72,7 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
 
   @override
   void dispose() {
+    _customerSearchDebounce?.cancel();
     _displayNameController.dispose();
     _icoController.dispose();
     _aliasesController.dispose();
@@ -78,25 +89,21 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
   Future<void> _loadData() async {
     if (mounted) setState(() => _isLoading = true);
     try {
-      // Omezíme načítání zákazníků pro dropdown na rozumnou míru nebo použijeme filtr
-      final customers = await _dbService.getZakaznici(limit: 5000); 
       final profiles = await _dbService.getCustomerProfiles();
 
       if (!mounted) return;
       setState(() {
-        _customers.clear();
-        _customers.addAll(customers);
-        _filteredCustomers = _customers; // Výchozí stav
-
         _profiles.clear();
         _profiles.addAll(profiles);
-        
         if (_profiles.isNotEmpty) {
           _selectedProfileId = _profiles.first.id;
-          _loadToControllers(_profiles.first);
         }
         _isLoading = false;
       });
+
+      if (_profiles.isNotEmpty) {
+        await _loadToControllers(_profiles.first);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -104,17 +111,23 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     }
   }
 
-  void _loadToControllers(CustomerProfile profile) {
+  Future<void> _loadToControllers(CustomerProfile profile) async {
     _displayNameController.text = profile.displayName;
     _icoController.text = profile.ico;
     _aliasesController.text = profile.aliases.join(', ');
     _keywordsController.text = profile.keywords.join(', ');
     _notesController.text = profile.notes;
     _linkedCustomerId = profile.customerId;
-    
-    // Reset vyhledávání při změně profilu
+
+    // Reset vyhledávání při změně profilu.
     _customerSearchController.clear();
-    _filteredCustomers = _customers;
+    _customerSearchQuery = '';
+    _customerSearchOffset = 0;
+    _customerSearchResults.clear();
+    _hasMoreCustomerResults = false;
+    _isCustomerSearchLoading = false;
+
+    await _loadSelectedCustomer(profile.customerId);
 
     for (final field in _systemFields) {
       final key = field['key']!;
@@ -122,18 +135,86 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     }
   }
 
-  void _filterCustomers(String query) {
-    final q = query.toLowerCase().trim();
+  Future<void> _loadSelectedCustomer(int? customerId) async {
+    if (customerId == null) {
+      if (!mounted) return;
+      setState(() => _selectedCustomer = null);
+      return;
+    }
+
+    final cached = _customerCache[customerId];
+    if (cached != null) {
+      if (!mounted) return;
+      setState(() => _selectedCustomer = cached);
+      return;
+    }
+
+    final customer = await _dbService.getZakaznikById(customerId);
+    if (customer == null || !mounted) return;
+
     setState(() {
-      if (q.isEmpty) {
-        _filteredCustomers = _customers;
-      } else {
-        _filteredCustomers = _customers.where((c) {
-          final name = (c['nazev'] ?? '').toString().toLowerCase();
-          final ico = (c['ic'] ?? '').toString().toLowerCase();
-          return name.contains(q) || ico.contains(q);
-        }).toList();
+      _customerCache[customerId] = customer;
+      _selectedCustomer = customer;
+    });
+  }
+
+  void _onCustomerSearchChanged(String query) {
+    _customerSearchDebounce?.cancel();
+    _customerSearchDebounce = Timer(const Duration(milliseconds: 350), () {
+      _searchCustomers(query, reset: true);
+    });
+  }
+
+  Future<void> _searchCustomers(String query, {required bool reset}) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _customerSearchQuery = '';
+        _customerSearchOffset = 0;
+        _customerSearchResults.clear();
+        _hasMoreCustomerResults = false;
+        _isCustomerSearchLoading = false;
+      });
+      return;
+    }
+
+    final nextOffset = reset ? 0 : _customerSearchOffset;
+
+    setState(() {
+      _customerSearchQuery = normalizedQuery;
+      _isCustomerSearchLoading = true;
+      if (reset) {
+        _customerSearchResults.clear();
+        _hasMoreCustomerResults = false;
       }
+    });
+
+    final results = await _dbService.getZakaznici(
+      query: normalizedQuery,
+      limit: _customerSearchPageSize,
+      offset: nextOffset,
+    );
+
+    if (!mounted || _customerSearchQuery != normalizedQuery) return;
+
+    setState(() {
+      if (reset) {
+        _customerSearchResults
+          ..clear()
+          ..addAll(results);
+      } else {
+        _customerSearchResults.addAll(results);
+      }
+      for (final customer in results) {
+        final id = customer['id'];
+        if (id is int) {
+          _customerCache[id] = customer;
+        }
+      }
+      _customerSearchOffset = nextOffset + results.length;
+      _hasMoreCustomerResults = results.length == _customerSearchPageSize;
+      _isCustomerSearchLoading = false;
     });
   }
 
@@ -141,8 +222,8 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     final profile = _profiles.firstWhere((p) => p.id == id);
     setState(() {
       _selectedProfileId = id;
-      _loadToControllers(profile);
     });
+    _loadToControllers(profile);
   }
 
   List<String> _splitCommaValues(String value) {
@@ -211,7 +292,11 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
       _keywordsController.clear();
       _notesController.clear();
       _customerSearchController.clear();
-      _filteredCustomers = _customers;
+      _selectedCustomer = null;
+      _customerSearchQuery = '';
+      _customerSearchOffset = 0;
+      _hasMoreCustomerResults = false;
+      _customerSearchResults.clear();
       for (final c in _mappingControllers.values) {
         c.clear();
       }
@@ -228,16 +313,22 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
       await _dbService.deleteCustomerProfile(active.profileUid);
       await _dbService.updateCustomerProfileUid(active.customerId, null);
 
+      final hadMoreProfiles = _profiles.length > 1;
       setState(() {
         _profiles.removeWhere((p) => p.id == _selectedProfileId);
         if (_profiles.isEmpty) {
-          _createNewCustomer();
+          _selectedProfileId = null;
         } else {
-          final first = _profiles.first;
-          _selectedProfileId = first.id;
-          _loadToControllers(first);
+          _selectedProfileId = _profiles.first.id;
         }
       });
+
+      if (hadMoreProfiles) {
+        await _loadToControllers(_profiles.first);
+      } else {
+        _createNewCustomer();
+      }
+
       _showMsg('PROFIL SMAZÁN');
     } catch (e) {
       if (!mounted) return;
@@ -247,12 +338,14 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
 
   String _customerNameById(int? id) {
     if (id == null) return 'Bez navázaného zákazníka';
-    for (final customer in _customers) {
-      if (customer['id'] == id) {
-        return customer['nazev']?.toString() ?? 'Neznámý zákazník';
-      }
+    final customer = _customerCache[id];
+    if (customer != null) {
+      return customer['nazev']?.toString() ?? 'Neznámý zákazník';
     }
-    return 'Neznámý zákazník';
+    if (_selectedCustomer?['id'] == id) {
+      return _selectedCustomer?['nazev']?.toString() ?? 'Neznámý zákazník';
+    }
+    return 'Zákazník #$id';
   }
 
   CustomerProfile? _findSelectedProfile() {
@@ -544,13 +637,11 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
   }
 
   Widget _buildEditorFooter(CustomerProfile? active) {
-    // Optimalizace: Použijeme filtrovaný seznam, aby Dropdown neobsahoval 10 000 položek najednou.
-    // Pokud je vybraný zákazník, musí být v seznamu i když neodpovídá filtru.
-    final dropdownItems = _filteredCustomers.toList();
-    if (_linkedCustomerId != null && !dropdownItems.any((c) => c['id'] == _linkedCustomerId)) {
-      final selected = _customers.firstWhere((c) => c['id'] == _linkedCustomerId, orElse: () => {});
-      if (selected.isNotEmpty) dropdownItems.add(selected);
+    final dropdownItems = _customerSearchResults.toList();
+    if (_selectedCustomer != null && !dropdownItems.any((c) => c['id'] == _selectedCustomer!['id'])) {
+      dropdownItems.insert(0, _selectedCustomer!);
     }
+    final hasSelectedInItems = dropdownItems.any((c) => c['id'] == _linkedCustomerId);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -567,10 +658,10 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
               Expanded(
                 child: TextField(
                   controller: _customerSearchController,
-                  onChanged: _filterCustomers,
+                  onChanged: _onCustomerSearchChanged,
                   style: const TextStyle(color: Colors.white, fontSize: 12),
                   decoration: const InputDecoration(
-                    hintText: "Hledat v seznamu zákazníků...",
+                    hintText: "Začněte psát pro hledání zákazníka...",
                     hintStyle: TextStyle(color: Colors.white10, fontSize: 12),
                     border: InputBorder.none,
                     isDense: true,
@@ -586,7 +677,7 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<int>(
-                  value: _linkedCustomerId,
+                  value: hasSelectedInItems ? _linkedCustomerId : null,
                   decoration: const InputDecoration(border: InputBorder.none, isDense: true),
                   dropdownColor: _bgCard,
                   isExpanded: true,
@@ -600,11 +691,34 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
                         ),
                       )
                       .toList(),
-                  onChanged: (value) => setState(() => _linkedCustomerId = value),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _linkedCustomerId = value;
+                      _selectedCustomer = _customerCache[value] ?? _selectedCustomer;
+                    });
+                  },
                 ),
               ),
             ],
           ),
+          if (_isCustomerSearchLoading) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(minHeight: 2, color: _accentColor),
+          ],
+          if (_customerSearchQuery.isNotEmpty && _hasMoreCustomerResults) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _isCustomerSearchLoading
+                    ? null
+                    : () => _searchCustomers(_customerSearchQuery, reset: false),
+                icon: const Icon(Icons.expand_more_rounded, size: 14),
+                label: const Text('Načíst další výsledky', style: TextStyle(fontSize: 11)),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [

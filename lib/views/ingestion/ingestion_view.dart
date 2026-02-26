@@ -103,9 +103,19 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
 
   Future<void> _loadCustomers(String query) async {
     if (!mounted) return;
+
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isNotEmpty && normalizedQuery.length < 2) {
+      setState(() {
+        _customerList = [];
+        _isCustomerLoading = false;
+      });
+      return;
+    }
+
     setState(() => _isCustomerLoading = true);
     try {
-      final raw = await DbService().getZakaznici(query: query, limit: 30);
+      final raw = await DbService().getZakaznici(query: normalizedQuery, limit: 30);
       if (mounted) {
         setState(() {
           _customerList = raw.map((e) => Map<String, dynamic>.from(e)).toList();

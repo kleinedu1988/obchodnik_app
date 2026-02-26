@@ -43,21 +43,43 @@ class CustomerMatcher {
     List<List<String>> previewRows,
     int headerRowIndex,
   ) async {
-    // Načtení profilů pro pokročilé párování
-    final customerProfiles = await DbService().getCustomerProfiles();
+    final dbService = DbService();
+    // Jednorázové načtení dat pro celé párování
+    final customerProfiles = await dbService.getCustomerProfiles();
+    final customers = await dbService.getZakaznici(limit: 9999);
+    final profilesAsMaps = customerProfiles.map((p) => p.toDbMap()).toList();
+    final customerById = <String, Map<String, dynamic>>{};
+    final customerByIc = <String, Map<String, dynamic>>{};
+
+    for (final customer in customers) {
+      final id = customer['id']?.toString().trim();
+      if (id != null && id.isNotEmpty) {
+        customerById[id] = customer;
+      }
+
+      final ic = customer['ic']?.toString().replaceAll(RegExp(r'\D'), '').trim() ?? '';
+      if (ic.isNotEmpty) {
+        customerByIc[ic] = customer;
+      }
+    }
     
     final scanRows = previewRows.sublist(0, min(headerRowIndex, previewRows.length));
 
     // 1. Přesná shoda přes IČ (nejvyšší priorita)
-    final icHit = await _tryIcMatch(scanRows, customerProfiles);
+    final icHit = _tryIcMatch(scanRows, profilesAsMaps, customerByIc);
     if (icHit != null) return icHit;
 
     // 2. Přesná shoda přes Aliasy definované v profilech
-    final aliasHit = await _tryAliasMatch(fileName, scanRows, customerProfiles);
+    final aliasHit = await _tryAliasMatch(
+      fileName,
+      scanRows,
+      profilesAsMaps,
+      customerById,
+      customerByIc,
+      dbService,
+    );
     if (aliasHit != null) return aliasHit;
 
-    // 3. Načtení všech základních zákazníků pro fuzzy matching
-    final customers = await DbService().getZakaznici(limit: 9999);
     if (customers.isEmpty) {
       return const CustomerMatchResult(
         customer: null,
@@ -111,7 +133,6 @@ class CustomerMatcher {
     }
 
     // B) Standardní fuzzy matching podle názvu
-    final profilesAsMaps = customerProfiles.map((p) => p.toDbMap()).toList();
     for (final customer in customers) {
       final nazev = customer['nazev']?.toString() ?? '';
       if (nazev.isEmpty) continue;
@@ -139,7 +160,7 @@ class CustomerMatcher {
 
     // Pokud jsme našli profil, ale nemáme zákazníka (u keyword match), zkusíme ho dohledat
     if (bestCustomer == null && bestProfile != null) {
-      bestCustomer = await _customerForProfile(bestProfile);
+      bestCustomer = await _customerForProfile(bestProfile, customerById, customerByIc, dbService);
     }
 
     return CustomerMatchResult(
@@ -156,12 +177,11 @@ class CustomerMatcher {
   //  SOUKROMÉ METODY
   // ---------------------------------------------------------------------------
 
-  Future<CustomerMatchResult?> _tryIcMatch(
+  CustomerMatchResult? _tryIcMatch(
     List<List<String>> rows,
-    dynamic customerProfiles, // List<CustomerProfile>
-  ) async {
-    final List<Map<String, dynamic>> profiles = (customerProfiles as Iterable).map((p) => p.toDbMap() as Map<String, dynamic>).toList();
-
+    List<Map<String, dynamic>> profiles,
+    Map<String, Map<String, dynamic>> customerByIc,
+  ) {
     for (final row in rows) {
       for (final cell in row) {
         final clean = cell.replaceAll(RegExp(r'[\s\-/]'), '');
@@ -169,13 +189,13 @@ class CustomerMatcher {
         if (match == null) continue;
         final ic = match.group(1)!;
         
-        final hits = await DbService().getZakaznici(query: ic, limit: 1);
-        if (hits.isNotEmpty) {
+        final customer = customerByIc[ic];
+        if (customer != null) {
           final profile = _profileForIc(profiles, ic);
           final profileUid = _readProfileUid(profile);
           
           return CustomerMatchResult(
-            customer: hits.first,
+            customer: customer,
             profileUid: profileUid,
             customerProfile: profile,
             confidence: 1.0,
@@ -191,9 +211,11 @@ class CustomerMatcher {
   Future<CustomerMatchResult?> _tryAliasMatch(
     String fileName,
     List<List<String>> rows,
-    dynamic customerProfiles, // List<CustomerProfile>
+    List<Map<String, dynamic>> profiles,
+    Map<String, Map<String, dynamic>> customerById,
+    Map<String, Map<String, dynamic>> customerByIc,
+    DbService dbService,
   ) async {
-    final List<Map<String, dynamic>> profiles = (customerProfiles as Iterable).map((p) => p.toDbMap() as Map<String, dynamic>).toList();
     if (profiles.isEmpty) return null;
 
     final candidates = _extractCandidates(fileName, rows);
@@ -206,7 +228,7 @@ class CustomerMatcher {
 
       for (final candidate in normalizedCandidates) {
         if (aliases.any((alias) => candidate.contains(alias) || alias.contains(candidate))) {
-          final customer = await _customerForProfile(profile);
+          final customer = await _customerForProfile(profile, customerById, customerByIc, dbService);
           final profileUid = _readProfileUid(profile);
           
           return CustomerMatchResult(
@@ -271,25 +293,31 @@ class CustomerMatcher {
     return null;
   }
 
-  Future<Map<String, dynamic>?> _customerForProfile(Map<String, dynamic> profile) async {
+  Future<Map<String, dynamic>?> _customerForProfile(
+    Map<String, dynamic> profile,
+    Map<String, Map<String, dynamic>> customerById,
+    Map<String, Map<String, dynamic>> customerByIc,
+    DbService dbService,
+  ) async {
     final customerId = profile['customer_id'];
     if (customerId != null) {
-      // Předpokládáme existenci metody getZakaznikById v DbService
-      final hits = await DbService().getZakaznici(query: '', limit: 1); // fallback pokud nemáme přímé ID hledání
-      final db = await DbService().database;
-      final res = await db.query('zakaznici', where: 'id = ?', whereArgs: [customerId], limit: 1);
-      if (res.isNotEmpty) return res.first;
+      final normalizedId = customerId.toString().trim();
+      final cached = customerById[normalizedId];
+      if (cached != null) return cached;
+
+      final byId = await dbService.getZakaznikById(normalizedId);
+      if (byId != null) return byId;
     }
 
     final ic = profile['ico']?.toString().replaceAll(RegExp(r'\D'), '') ?? '';
     if (ic.isNotEmpty) {
-      final hits = await DbService().getZakaznici(query: ic, limit: 1);
-      if (hits.isNotEmpty) return hits.first;
+      final byIc = customerByIc[ic];
+      if (byIc != null) return byIc;
     }
 
     final displayName = profile['display_name']?.toString() ?? '';
     if (displayName.isNotEmpty) {
-      final hits = await DbService().getZakaznici(query: displayName, limit: 1);
+      final hits = await dbService.getZakaznici(query: displayName, limit: 1);
       if (hits.isNotEmpty) return hits.first;
     }
     return null;
