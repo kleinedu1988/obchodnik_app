@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:path/path.dart' as p;
 
 // --- LOGIKA A SLUŽBY ---
 import '../../../logic/ingestion_service.dart';
@@ -10,6 +11,8 @@ import '../../../logic/notifications.dart';
 import '../../../logic/excel_header_detector.dart';
 import '../../../logic/customer_matcher.dart';
 import '../../../logic/db_service.dart';
+import '../../../logic/smart_mapping_engine.dart';
+import 'mapping_review_dialog.dart';
 
 class IngestionView extends StatefulWidget {
   const IngestionView({super.key});
@@ -39,6 +42,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
   bool _isCustomerLoading = false;
   Timer? _customerSearchDebounce;
   final TextEditingController _customerSearchCtrl = TextEditingController();
+  bool _mappingDialogVisible = false;
 
   // --- DESIGN SYSTÉMU BRIDGE ---
   static const Color _bgDeep = Color(0xFF0F1115);
@@ -74,6 +78,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
 
   void _onWorkflowChanged() {
     if (!mounted) return;
+    
     if (_workflow.isMatchingCustomer && _customerList.isEmpty && !_isCustomerLoading) {
       // Wizard se právě objevil — předvyber AI návrh a načti seznam
       setState(() {
@@ -81,12 +86,18 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
         _customerSearchCtrl.clear();
       });
       _loadCustomers('');
-    } else if (!_workflow.isMatchingCustomer && _customerList.isNotEmpty) {
-      // Wizard zmizel — resetuj stav pro příští použití
+    } else if (!_workflow.isMatchingCustomer && _customerList.isNotEmpty && !_workflow.isMappingPending) {
+      // Wizard zmizel — resetuj stav pro příští použití (pokud nečekáme na mapování)
       setState(() {
         _customerList = [];
         _selectedCustomer = null;
       });
+    }
+
+    // Trigger pro otevření dialogu kontroly mapování
+    if (_workflow.isMappingPending && !_mappingDialogVisible) {
+      _mappingDialogVisible = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openMappingReviewDialog());
     }
   }
 
@@ -149,6 +160,8 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
           activeChild = _buildHeaderWizard();
         } else if (_workflow.isMatchingCustomer) {
           activeChild = _buildCustomerWizard();
+        } else if (_workflow.isMappingPending) {
+          activeChild = _buildMappingLoadingState();
         } else if (_workflow.lastIngestion != null) {
           activeChild = _buildDecisionOverlay();
         } else {
@@ -207,7 +220,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
   }
 
   // ===========================================================================
-  //  2. HEADER WIZARD (Zjednodušený pohled)
+  //  2. HEADER WIZARD
   // ===========================================================================
 
   Widget _buildHeaderWizard() {
@@ -228,7 +241,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Hlavička Wizardu
           Row(
             children: [
               Container(
@@ -248,10 +260,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
               ),
             ],
           ),
-          
           const SizedBox(height: 24),
-          
-          // --- RYCHLÝ VÝBĚR (TOP KANDIDÁTI) ---
           if (topCandidates.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
@@ -280,8 +289,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                 ],
               ),
             ),
-
-          // TABULKA S HORIZONTÁLNÍM SCROLLEM
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -296,7 +303,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                   controller: _horizontalScrollController,
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
-                    // Vypočítáme šířku obsahu, aby grid fungoval správně
                     width: _calculateTableWidth(res),
                     child: ListView.separated(
                       controller: _verticalScrollController,
@@ -305,10 +311,8 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                       separatorBuilder: (_, __) => const SizedBox(height: 4),
                       itemBuilder: (context, rowIndex) {
                         final bool isSelected = res.headerRowIndex == rowIndex;
-                        final bool isIgnored = rowIndex < res.headerRowIndex; // Ghosting pro řádky nad hlavičkou
+                        final bool isIgnored = rowIndex < res.headerRowIndex;
                         final List<String> rowData = res.previewRows[rowIndex];
-                        
-                        // Výpočet barvy podle shody
                         final double confidence = res.getConfidence(rowIndex);
                         final Color rowColor = _getColorForConfidence(confidence);
 
@@ -321,8 +325,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                               duration: const Duration(milliseconds: 200),
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               decoration: BoxDecoration(
-                                // Pokud je vybráno -> Modrá
-                                // Pokud není vybráno, ale má shodu -> Jemný nádech barvy shody
                                 color: isSelected 
                                     ? _accentColor.withValues(alpha: 0.15) 
                                     : (confidence > 0.2 ? rowColor.withValues(alpha: 0.05) : Colors.transparent),
@@ -334,7 +336,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                               ),
                               child: Row(
                                 children: [
-                                  // Index řádku (fixní šířka)
                                   SizedBox(
                                     width: 40,
                                     child: Center(
@@ -346,7 +347,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                                         )),
                                     ),
                                   ),
-                                  // Dynamicky generované buňky
                                   ..._buildRowCells(rowIndex, rowData, res.knownSpans, isSelected),
                                 ],
                               ),
@@ -360,10 +360,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
               ),
             ),
           ),
-          
           const SizedBox(height: 24),
-          
-          // Akční tlačítka
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -383,109 +380,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                ),
             ],
           )
-        ],
-      ),
-    );
-  }
-
-  // --- POMOCNÉ METODY PRO WIZARD ---
-
-  Color _getColorForConfidence(double conf) {
-    if (conf >= 0.8) return _successColor;
-    if (conf >= 0.4) return const Color(0xFFF59E0B); // Amber
-    return const Color(0xFFEF4444); // Red
-  }
-
-  void _scrollToRow(int index) {
-    if (_verticalScrollController.hasClients) {
-      _verticalScrollController.animateTo(
-        index * 45.0, // Odhadovaná výška řádku (padding + content)
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOutCubic,
-      );
-    }
-  }
-
-  /// Vypočítá celkovou šířku tabulky podle nejdelšího řádku
-  double _calculateTableWidth(HeaderDetectionResult res) {
-    int maxCols = 0;
-    for (var row in res.previewRows) {
-      if (row.length > maxCols) maxCols = row.length;
-    }
-    // 40 je šířka pro index řádku + padding
-    return (maxCols * _colWidth) + 60; 
-  }
-
-  /// Generuje widgety pro buňky.
-  /// Sloučené buňky zobrazuje jako JEDNU buňku (normální šířky), 
-  /// ale stále přeskakuje ty skryté pod ní, aby se neopakovaly.
-  List<Widget> _buildRowCells(int rowIndex, List<String> rowData, List<ExcelSpan> spans, bool isHeader) {
-    List<Widget> cells = [];
-
-    for (int colIndex = 0; colIndex < rowData.length; colIndex++) {
-      // 1. Zjistíme, jestli je tato buňka součástí nějakého spanu
-      ExcelSpan? activeSpan;
-      for (var span in spans) {
-        if (span.contains(rowIndex, colIndex)) {
-          activeSpan = span;
-          break;
-        }
-      }
-
-      if (activeSpan != null) {
-        // Jsme uvnitř spojené oblasti.
-        // A. Je to "Master" buňka? (Začátek oblasti)
-        if (activeSpan.rowStart == rowIndex && activeSpan.colStart == colIndex) {
-          // Vykreslíme jako normální buňku (žádné extra roztahování)
-          cells.add(Container(
-            width: _colWidth, 
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: _buildCellContent(rowData[colIndex], isHeader, isMerged: true),
-          ));
-        } 
-        // B. Není to master? -> Přeskočíme (nevykreslujeme nic)
-      } else {
-        // Není ve spanu -> Normální buňka
-        cells.add(Container(
-          width: _colWidth,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: _buildCellContent(rowData[colIndex], isHeader),
-        ));
-      }
-    }
-    return cells;
-  }
-
-  /// Vykreslení obsahu jedné buňky
-  Widget _buildCellContent(String text, bool isHeader, {bool isMerged = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: isHeader ? _bgCard : Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(4),
-        // Ikonka merge nám stačí jako indikátor, rámeček není nutný
-        border: isMerged ? Border.all(color: _accentColor.withValues(alpha: 0.3)) : null,
-      ),
-      alignment: Alignment.centerLeft,
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              text.isEmpty ? "-" : text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isHeader ? Colors.white : Colors.white70,
-                fontSize: 11,
-                fontWeight: isHeader ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ),
-          if (isMerged) 
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: Icon(Icons.merge_type, size: 12, color: _accentColor),
-            )
         ],
       ),
     );
@@ -513,7 +407,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Hlavička
           Row(
             children: [
               Container(
@@ -533,35 +426,25 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
               ),
             ],
           ),
-
           const SizedBox(height: 20),
-
-          // AI návrh (pokud existuje)
           if (hasSuggestion) _buildSuggestionPanel(result),
           if (hasSuggestion) const SizedBox(height: 16),
-
-          // Vyhledávání
           _buildCustomerSearchField(),
           const SizedBox(height: 8),
-
-          // Seznam zákazníků
           SizedBox(height: 280, child: _buildCustomerList()),
-
           const SizedBox(height: 24),
-
-          // Akční tlačítka
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed: _isLocked ? null : () => _workflow.confirmCustomer(null),
+                onPressed: _isLocked ? null : () async => _workflow.confirmCustomer(null),
                 child: const Text("PŘESKOČIT", style: TextStyle(color: _textDim)),
               ),
               const SizedBox(width: 16),
               SizedBox(
                 width: 230,
                 child: ElevatedButton(
-                  onPressed: _isLocked ? null : () => _workflow.confirmCustomer(_selectedCustomer),
+                  onPressed: _isLocked ? null : () async => _workflow.confirmCustomer(_selectedCustomer),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _successColor,
                     foregroundColor: Colors.white,
@@ -613,7 +496,7 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
                       style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 3),
                   Text(
-                    "ID: ${customer['externi_id'] ?? '-'}  •  IČ: ${customer['ic'] ?? '-'}  •  nalezeno: ${result.matchedOn}",
+                    "ID: ${customer['externi_id'] ?? '-'}  •  IČ: ${customer['ic'] ?? '-'}  •  metoda: ${result.matchedOn}",
                     style: const TextStyle(color: Colors.white38, fontSize: 10),
                   ),
                 ],
@@ -699,7 +582,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
               ),
               child: Row(
                 children: [
-                  // Radio indikátor
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     width: 14, height: 14,
@@ -743,6 +625,95 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
   }
 
   // ===========================================================================
+  //  LOGIKA: SMART MAPPING REVIEW
+  // ===========================================================================
+
+  Widget _buildMappingLoadingState() {
+    return Container(
+      key: const ValueKey('mapping_loading'),
+      width: 420,
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: _bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _borderColor),
+      ),
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircularProgressIndicator(color: _accentColor),
+          SizedBox(height: 16),
+          Text(
+            'Připravuji kontrolu mapování pro vybraného zákazníka...',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openMappingReviewDialog() async {
+    if (!mounted) return;
+
+    final headers = _workflow.headerResult?.cleanedHeaders ?? <String>[];
+    final matches = _buildMappingMatches(headers, _workflow.customerProfileMappings ?? {});
+
+    final result = await showDialog<Map<String, String?>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => MappingReviewDialog(
+        initialMatches: matches,
+        allExcelHeaders: headers,
+      ),
+    );
+
+    if (result != null && _workflow.customerProfileUid != null && _workflow.assignedCustomer != null) {
+      final mapped = result.map((key, value) => MapEntry(key, value ?? ''));
+      
+      // Fix: Zajištění, že ID je předáváno jako String, pokud ho saveCustomerProfileRaw očekává
+      final customerId = _workflow.assignedCustomer!['id']?.toString() ?? '';
+      final customerName = _workflow.assignedCustomer!['nazev']?.toString() ?? '';
+
+      await DbService().saveCustomerProfileRaw(
+        uid: _workflow.customerProfileUid!,
+        customerId: customerId,
+        customerName: customerName,
+        mappings: mapped,
+      );
+      _workflow.customerProfileMappings = mapped;
+    }
+
+    _mappingDialogVisible = false;
+    _workflow.completeMappingReview();
+  }
+
+  List<MappingMatch> _buildMappingMatches(List<String> headers, Map<String, String> prefill) {
+    const fields = ['pos', 'name', 'qty', 'material', 'thickness', 'dims'];
+    final normalizedHeaders = headers.map((e) => e.trim().toLowerCase()).toList();
+
+    return fields.map((field) {
+      final csv = prefill[field] ?? '';
+      String? matched;
+      for (final token in csv.split(',')) {
+        final key = token.trim().toLowerCase();
+        if (key.isEmpty) continue;
+        final idx = normalizedHeaders.indexOf(key);
+        if (idx >= 0) {
+          matched = headers[idx];
+          break;
+        }
+      }
+      return MappingMatch(
+        systemField: field,
+        excelColumn: matched,
+        confidence: matched != null ? 0.95 : 0.0,
+        level: matched != null ? MappingConfidence.high : MappingConfidence.none,
+      );
+    }).toList();
+  }
+
+  // ===========================================================================
   //  4. ROZHODOVACÍ STAV
   // ===========================================================================
   
@@ -768,7 +739,6 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
             style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1)),
           const SizedBox(height: 8),
           Text(result.summaryLine, style: const TextStyle(color: _textDim, fontSize: 11, fontWeight: FontWeight.bold)),
-          
           const SizedBox(height: 48),
           const Text("Zvolte typ zpracování:", style: TextStyle(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 32),
@@ -899,6 +869,70 @@ class _IngestionViewState extends State<IngestionView> with SingleTickerProvider
         const SizedBox(width: 10),
         Text(label, style: const TextStyle(color: _textDim, fontSize: 10, fontWeight: FontWeight.bold)),
       ],
+    );
+  }
+
+  Color _getColorForConfidence(double conf) {
+    if (conf >= 0.8) return _successColor;
+    if (conf >= 0.4) return const Color(0xFFF59E0B);
+    return const Color(0xFFEF4444);
+  }
+
+  void _scrollToRow(int index) {
+    if (_verticalScrollController.hasClients) {
+      _verticalScrollController.animateTo(
+        index * 45.0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
+
+  double _calculateTableWidth(HeaderDetectionResult res) {
+    int maxCols = 0;
+    for (var row in res.previewRows) {
+      if (row.length > maxCols) maxCols = row.length;
+    }
+    return (maxCols * _colWidth) + 60; 
+  }
+
+  List<Widget> _buildRowCells(int rowIndex, List<String> rowData, List<ExcelSpan> spans, bool isHeader) {
+    List<Widget> cells = [];
+    for (int colIndex = 0; colIndex < rowData.length; colIndex++) {
+      ExcelSpan? activeSpan;
+      for (var span in spans) {
+        if (span.contains(rowIndex, colIndex)) {
+          activeSpan = span;
+          break;
+        }
+      }
+      if (activeSpan != null) {
+        if (activeSpan.rowStart == rowIndex && activeSpan.colStart == colIndex) {
+          cells.add(SizedBox(width: _colWidth, child: _buildCellContent(rowData[colIndex], isHeader, isMerged: true)));
+        } 
+      } else {
+        cells.add(SizedBox(width: _colWidth, child: _buildCellContent(rowData[colIndex], isHeader)));
+      }
+    }
+    return cells;
+  }
+
+  Widget _buildCellContent(String text, bool isHeader, {bool isMerged = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: isHeader ? _bgCard : Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(4),
+        border: isMerged ? Border.all(color: _accentColor.withValues(alpha: 0.3)) : null,
+      ),
+      child: Row(
+        children: [
+          Expanded(child: Text(text.isEmpty ? "-" : text, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: isHeader ? Colors.white : Colors.white70, fontSize: 11))),
+          if (isMerged) Icon(Icons.merge_type, size: 12, color: _accentColor),
+        ],
+      ),
     );
   }
 }

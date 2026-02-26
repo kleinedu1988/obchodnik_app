@@ -1,28 +1,6 @@
 import 'package:flutter/material.dart';
-
-/// Dočasný model – bude nahrazen skutečným modelem až se vyřeší persistence.
-class _MockCustomer {
-  String id;
-  String displayName;
-  String ico;
-  List<String> aliases;
-  List<String> keywords;
-  String notes;
-  Map<String, String> mappings;
-
-  _MockCustomer({
-    required this.id,
-    required this.displayName,
-    this.ico = '',
-    this.aliases = const [],
-    this.keywords = const [],
-    this.notes = '',
-    this.mappings = const {},
-  });
-
-  int get patternCount =>
-      aliases.length + keywords.length + (ico.isNotEmpty ? 1 : 0);
-}
+import 'package:mrb_obchodnik/logic/customer_profile.dart';
+import 'package:mrb_obchodnik/logic/db_service.dart';
 
 class CustomerProfilesTab extends StatefulWidget {
   const CustomerProfilesTab({super.key});
@@ -37,8 +15,9 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
   static const Color _bgCard = Color(0xFF16181D);
   static const Color _borderColor = Color(0xFF2A2D35);
 
-  // ── Systémová pole (stejná jako v ProfilesEditorTab) ───────────────────
-  final List<Map<String, String>> _systemFields = [
+  final DbService _dbService = DbService();
+
+  final List<Map<String, String>> _systemFields = const [
     {'key': 'pos', 'label': 'POZICE', 'desc': 'Číslo pozice v sestavě'},
     {'key': 'name', 'label': 'NÁZEV DÍLU', 'desc': 'Hlavní identifikátor dílu'},
     {'key': 'qty', 'label': 'MNOŽSTVÍ', 'desc': 'Počet kusů (ks, qty)'},
@@ -47,56 +26,21 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     {'key': 'dims', 'label': 'ROZMĚRY', 'desc': 'Formát (1000x2000, atd.)'},
   ];
 
-  // ── Mock data ──────────────────────────────────────────────────────────
-  final List<_MockCustomer> _customers = [
-    _MockCustomer(
-      id: '1',
-      displayName: 'Stavebniny Liberec s.r.o.',
-      ico: '27345678',
-      aliases: ['STAV Liberec', 'Stavebniny LBC'],
-      keywords: ['liberec', 'stavba-projekt'],
-      notes: 'Hlavní odběratel – kontakt: Jan Novák',
-      mappings: {
-        'pos': 'Pozice, Pol.',
-        'name': 'Název, Popis',
-        'qty': 'Ks, Množství',
-        'material': 'Materiál',
-        'thickness': 'Tl., Tloušťka',
-        'dims': 'Rozměr, Formát',
-      },
-    ),
-    _MockCustomer(
-      id: '2',
-      displayName: 'KOVO Praha a.s.',
-      ico: '45123456',
-      aliases: ['Kovo-Praha'],
-      keywords: ['kovo', 'praha-ocel'],
-      mappings: {
-        'pos': 'Item',
-        'name': 'Description',
-        'qty': 'Qty',
-        'material': 'Grade',
-        'thickness': 'Thk',
-        'dims': 'Size',
-      },
-    ),
-    _MockCustomer(
-      id: '3',
-      displayName: 'Zámečnictví Horák',
-      ico: '',
-      aliases: ['Horák'],
-      keywords: ['horak', 'zamecnictvi'],
-      notes: 'Menší zakázky, platba předem',
-    ),
-  ];
+  final List<CustomerProfile> _profiles = [];
+  final List<Map<String, dynamic>> _customers = [];
+  List<Map<String, dynamic>> _filteredCustomers = []; // Optimalizace pro vyhledávání
 
-  // ── Controllery ────────────────────────────────────────────────────────
-  String? _selectedCustomerId;
+  int? _selectedProfileId;
+  int? _linkedCustomerId;
+  bool _isLoading = false;
+
   late TextEditingController _displayNameController;
   late TextEditingController _icoController;
   late TextEditingController _aliasesController;
   late TextEditingController _keywordsController;
   late TextEditingController _notesController;
+  late TextEditingController _customerSearchController; // Pro filtraci navázaného zákazníka
+  
   final Map<String, TextEditingController> _mappingControllers = {};
 
   @override
@@ -107,14 +51,13 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     _aliasesController = TextEditingController();
     _keywordsController = TextEditingController();
     _notesController = TextEditingController();
+    _customerSearchController = TextEditingController();
 
-    for (var field in _systemFields) {
+    for (final field in _systemFields) {
       _mappingControllers[field['key']!] = TextEditingController();
     }
 
-    if (_customers.isNotEmpty) {
-      _selectCustomer(_customers.first.id);
-    }
+    _loadData();
   }
 
   @override
@@ -124,113 +67,235 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     _aliasesController.dispose();
     _keywordsController.dispose();
     _notesController.dispose();
-    for (var c in _mappingControllers.values) {
+    _customerSearchController.dispose();
+    for (final c in _mappingControllers.values) {
       c.dispose();
     }
     super.dispose();
   }
 
-  // ── Logika (in-memory) ─────────────────────────────────────────────────
+  /// Načtení dat s ochranou proti zamrznutí UI
+  Future<void> _loadData() async {
+    if (mounted) setState(() => _isLoading = true);
+    try {
+      // Omezíme načítání zákazníků pro dropdown na rozumnou míru nebo použijeme filtr
+      final customers = await _dbService.getZakaznici(limit: 5000); 
+      final profiles = await _dbService.getCustomerProfiles();
 
-  void _loadToControllers(_MockCustomer c) {
-    _displayNameController.text = c.displayName;
-    _icoController.text = c.ico;
-    _aliasesController.text = c.aliases.join(', ');
-    _keywordsController.text = c.keywords.join(', ');
-    _notesController.text = c.notes;
-    for (var field in _systemFields) {
-      final key = field['key']!;
-      _mappingControllers[key]!.text = c.mappings[key] ?? '';
+      if (!mounted) return;
+      setState(() {
+        _customers.clear();
+        _customers.addAll(customers);
+        _filteredCustomers = _customers; // Výchozí stav
+
+        _profiles.clear();
+        _profiles.addAll(profiles);
+        
+        if (_profiles.isNotEmpty) {
+          _selectedProfileId = _profiles.first.id;
+          _loadToControllers(_profiles.first);
+        }
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showMsg('CHYBA NAČTENÍ: $e', isError: true);
     }
   }
 
-  void _selectCustomer(String id) {
+  void _loadToControllers(CustomerProfile profile) {
+    _displayNameController.text = profile.displayName;
+    _icoController.text = profile.ico;
+    _aliasesController.text = profile.aliases.join(', ');
+    _keywordsController.text = profile.keywords.join(', ');
+    _notesController.text = profile.notes;
+    _linkedCustomerId = profile.customerId;
+    
+    // Reset vyhledávání při změně profilu
+    _customerSearchController.clear();
+    _filteredCustomers = _customers;
+
+    for (final field in _systemFields) {
+      final key = field['key']!;
+      _mappingControllers[key]!.text = profile.mappings[key] ?? '';
+    }
+  }
+
+  void _filterCustomers(String query) {
+    final q = query.toLowerCase().trim();
     setState(() {
-      _selectedCustomerId = id;
-      _loadToControllers(_customers.firstWhere((c) => c.id == id));
+      if (q.isEmpty) {
+        _filteredCustomers = _customers;
+      } else {
+        _filteredCustomers = _customers.where((c) {
+          final name = (c['nazev'] ?? '').toString().toLowerCase();
+          final ico = (c['ic'] ?? '').toString().toLowerCase();
+          return name.contains(q) || ico.contains(q);
+        }).toList();
+      }
     });
   }
 
-  void _saveCurrentCustomer() {
-    final c = _customers.firstWhere((c) => c.id == _selectedCustomerId);
+  void _selectProfile(int id) {
+    final profile = _profiles.firstWhere((p) => p.id == id);
     setState(() {
-      c.displayName = _displayNameController.text.trim();
-      c.ico = _icoController.text.trim();
-      c.aliases = _aliasesController.text
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-      c.keywords = _keywordsController.text
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-      c.notes = _notesController.text.trim();
-      c.mappings = Map.fromEntries(
-        _mappingControllers.entries.map((e) => MapEntry(e.key, e.value.text)),
-      );
+      _selectedProfileId = id;
+      _loadToControllers(profile);
     });
+  }
+
+  List<String> _splitCommaValues(String value) {
+    return value.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+  }
+
+  Future<void> _saveCurrentCustomer() async {
+    final displayName = _displayNameController.text.trim();
+    if (displayName.isEmpty) {
+      _showMsg('Název profilu je povinný.', isError: true);
+      return;
+    }
+    if (_linkedCustomerId == null) {
+      _showMsg('Navázaný zákazník je povinný.', isError: true);
+      return;
+    }
+
+    final selected = _findSelectedProfile();
+
+    final profile = CustomerProfile(
+      id: selected?.id,
+      customerId: _linkedCustomerId!,
+      profileUid: selected?.profileUid ?? 'cp_${DateTime.now().millisecondsSinceEpoch}',
+      displayName: displayName,
+      ico: _icoController.text.trim(),
+      aliases: _splitCommaValues(_aliasesController.text),
+      keywords: _splitCommaValues(_keywordsController.text),
+      notes: _notesController.text.trim(),
+      mappings: Map.fromEntries(
+        _mappingControllers.entries
+            .map((e) => MapEntry(e.key, e.value.text.trim()))
+            .where((e) => e.value.isNotEmpty),
+      ),
+    );
+
+    try {
+      final saved = await _dbService.saveCustomerProfile(profile);
+      await _dbService.updateCustomerProfileUid(_linkedCustomerId!, saved.profileUid);
+
+      final idx = _profiles.indexWhere((p) => p.id == saved.id);
+      setState(() {
+        if (idx == -1) {
+          _profiles.add(saved);
+        } else {
+          _profiles[idx] = saved;
+        }
+        _profiles.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+        _selectedProfileId = saved.id;
+      });
+      
+      if (!mounted) return;
+      _showMsg('PROFIL ULOŽEN');
+    } catch (e) {
+      if (!mounted) return;
+      _showMsg('CHYBA ULOŽENÍ: $e', isError: true);
+    }
+  }
+
+  void _createNewCustomer() {
+    setState(() {
+      _selectedProfileId = null;
+      _linkedCustomerId = null;
+      _displayNameController.clear();
+      _icoController.clear();
+      _aliasesController.clear();
+      _keywordsController.clear();
+      _notesController.clear();
+      _customerSearchController.clear();
+      _filteredCustomers = _customers;
+      for (final c in _mappingControllers.values) {
+        c.clear();
+      }
+    });
+  }
+
+  Future<void> _deleteCurrentCustomer() async {
+    if (_selectedProfileId == null) return;
+    
+    final active = _findSelectedProfile();
+    if (active == null) return;
+
+    try {
+      await _dbService.deleteCustomerProfile(active.profileUid);
+      await _dbService.updateCustomerProfileUid(active.customerId, null);
+
+      setState(() {
+        _profiles.removeWhere((p) => p.id == _selectedProfileId);
+        if (_profiles.isEmpty) {
+          _createNewCustomer();
+        } else {
+          final first = _profiles.first;
+          _selectedProfileId = first.id;
+          _loadToControllers(first);
+        }
+      });
+      _showMsg('PROFIL SMAZÁN');
+    } catch (e) {
+      if (!mounted) return;
+      _showMsg('CHYBA MAZÁNÍ: $e', isError: true);
+    }
+  }
+
+  String _customerNameById(int? id) {
+    if (id == null) return 'Bez navázaného zákazníka';
+    for (final customer in _customers) {
+      if (customer['id'] == id) {
+        return customer['nazev']?.toString() ?? 'Neznámý zákazník';
+      }
+    }
+    return 'Neznámý zákazník';
+  }
+
+  CustomerProfile? _findSelectedProfile() {
+    for (final profile in _profiles) {
+      if (profile.id == _selectedProfileId) return profile;
+    }
+    return null;
+  }
+
+  void _showMsg(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("ZÁKAZNÍK ULOŽEN"),
-        duration: Duration(seconds: 1),
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Colors.redAccent : null,
+        duration: const Duration(seconds: 1),
       ),
     );
   }
 
-  void _createNewCustomer() {
-    final newId = DateTime.now().millisecondsSinceEpoch.toString();
-    setState(() {
-      _customers.add(_MockCustomer(id: newId, displayName: "Nový zákazník"));
-      _selectCustomer(newId);
-    });
-  }
-
-  void _deleteCurrentCustomer() {
-    if (_customers.length <= 1) return;
-    setState(() {
-      _customers.removeWhere((c) => c.id == _selectedCustomerId);
-      _selectCustomer(_customers.first.id);
-    });
-  }
-
-  // =====================================================================
-  //  BUILD
-  // =====================================================================
-
   @override
   Widget build(BuildContext context) {
-    if (_customers.isEmpty) return _buildEmptyState();
-
-    if (!_customers.any((c) => c.id == _selectedCustomerId)) {
-      _selectedCustomerId = _customers.first.id;
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor));
     }
 
-    final active = _customers.firstWhere((c) => c.id == _selectedCustomerId);
+    if (_profiles.isEmpty && _selectedProfileId == null) return _buildEmptyState();
+
+    final active = _findSelectedProfile();
 
     return Padding(
       padding: const EdgeInsets.only(top: 24),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(flex: 1, child: _buildCustomersPanel()),
-          Container(
-            width: 1,
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            color: _glassBorder,
-          ),
+          Expanded(flex: 1, child: _buildProfilesPanel()),
+          Container(width: 1, margin: const EdgeInsets.symmetric(horizontal: 24), color: _glassBorder),
           Expanded(flex: 2, child: _buildEditorPanel(active)),
         ],
       ),
     );
   }
 
-  // =====================================================================
-  //  LEVÝ PANEL
-  // =====================================================================
-
-  Widget _buildCustomersPanel() {
+  Widget _buildProfilesPanel() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -239,28 +304,21 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _sectionHeader("ZÁKAZNÍCI"),
+              _sectionHeader('PROFILY'),
               const Spacer(),
               InkWell(
                 onTap: _createNewCustomer,
                 borderRadius: BorderRadius.circular(4),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.add_rounded,
-                          size: 14, color: _accentColor.withOpacity(0.7)),
+                      Icon(Icons.add_rounded, size: 14, color: _accentColor.withOpacity(0.7)),
                       const SizedBox(width: 4),
                       Text(
-                        "NOVÝ",
-                        style: TextStyle(
-                          color: _accentColor.withOpacity(0.7),
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1,
-                        ),
+                        'NOVÝ',
+                        style: TextStyle(color: _accentColor.withOpacity(0.7), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1),
                       ),
                     ],
                   ),
@@ -274,18 +332,13 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
           child: Padding(
             padding: const EdgeInsets.only(bottom: 24),
             child: Container(
-              decoration: BoxDecoration(
-                color: _bgCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _borderColor),
-              ),
+              decoration: BoxDecoration(color: _bgCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: _borderColor)),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: ListView.builder(
                   padding: EdgeInsets.zero,
-                  itemCount: _customers.length,
-                  itemBuilder: (context, i) => _buildCustomerRow(
-                      _customers[i], i == _customers.length - 1),
+                  itemCount: _profiles.length,
+                  itemBuilder: (context, i) => _buildProfileRow(_profiles[i], i == _profiles.length - 1),
                 ),
               ),
             ),
@@ -295,86 +348,61 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     );
   }
 
-  Widget _buildCustomerRow(_MockCustomer customer, bool isLast) {
-    final isSelected = customer.id == _selectedCustomerId;
+  Widget _buildProfileRow(CustomerProfile profile, bool isLast) {
+    final isSelected = profile.id == _selectedProfileId;
 
     return InkWell(
-      onTap: () => _selectCustomer(customer.id),
+      onTap: () => _selectProfile(profile.id!),
       hoverColor: Colors.white.withOpacity(0.02),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected
-              ? _accentColor.withOpacity(0.06)
-              : Colors.transparent,
-          border: isLast
-              ? null
-              : const Border(bottom: BorderSide(color: _borderColor)),
+          color: isSelected ? _accentColor.withOpacity(0.06) : Colors.transparent,
+          border: isLast ? null : const Border(bottom: BorderSide(color: _borderColor)),
         ),
         child: Row(
           children: [
-            // Radio – shodný styl s ProfilesEditorTab
             AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               width: 12,
               height: 12,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: isSelected ? _accentColor : Colors.white24,
-                  width: 2,
-                ),
+                border: Border.all(color: isSelected ? _accentColor : Colors.white24, width: 2),
                 color: isSelected ? _accentColor : Colors.transparent,
               ),
             ),
             const SizedBox(width: 12),
-
-            // Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    customer.displayName,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.white70,
-                      fontSize: 12,
-                      fontWeight:
-                          isSelected ? FontWeight.w700 : FontWeight.normal,
-                    ),
+                    profile.displayName,
+                    style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 12, fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Text(
-                        customer.ico.isNotEmpty
-                            ? "IČ: ${customer.ico}  ·  ${customer.patternCount} vzorů"
-                            : "${customer.patternCount} vzorů",
-                        style: const TextStyle(
-                          color: Colors.white24,
-                          fontSize: 9,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
+                  Text(
+                    '${_customerNameById(profile.customerId)}  ·  ${profile.patternCount} vzorů',
+                    style: const TextStyle(color: Colors.white24, fontSize: 9, fontFamily: 'monospace'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-
-            // Smazat – shodný styl s ProfilesEditorTab
             IconButton(
               onPressed: () {
-                _selectCustomer(customer.id);
+                _selectedProfileId = profile.id;
                 _deleteCurrentCustomer();
               },
               icon: const Icon(Icons.close_rounded, size: 12),
               color: Colors.white12,
               hoverColor: Colors.redAccent.withOpacity(0.1),
-              tooltip: "Smazat zákazníka",
+              tooltip: 'Smazat profil',
               constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               padding: EdgeInsets.zero,
             ),
@@ -384,111 +412,41 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     );
   }
 
-  // =====================================================================
-  //  PRAVÝ PANEL
-  // =====================================================================
-
-  Widget _buildEditorPanel(_MockCustomer customer) {
+  Widget _buildEditorPanel(CustomerProfile? active) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          height: 24,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _sectionHeader("PROFIL ZÁKAZNÍKA"),
-            ],
-          ),
-        ),
+        SizedBox(height: 24, child: Row(children: [_sectionHeader('PROFIL ZÁKAZNÍKA')])),
         const SizedBox(height: 12),
         Expanded(
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ─── TABULKA 1: ROZPOZNÁVACÍ VZORY ─────────────────────
-                _tableLabel(Icons.manage_search_rounded, "ROZPOZNÁVACÍ VZORY"),
+                _tableLabel(Icons.manage_search_rounded, 'ROZPOZNÁVACÍ VZORY'),
                 const SizedBox(height: 8),
                 Container(
-                  decoration: BoxDecoration(
-                    color: _bgCard,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _borderColor),
-                  ),
+                  decoration: BoxDecoration(color: _bgCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: _borderColor)),
                   child: Column(
                     children: [
-                      _buildFieldRow(
-                        icon: Icons.badge_outlined,
-                        label: "IČO",
-                        desc: "Identifikační číslo firmy",
-                        controller: _icoController,
-                        hintText: "např. 12345678",
-                      ),
-                      _buildFieldRow(
-                        icon: Icons.text_fields_rounded,
-                        label: "ALIASY",
-                        desc: "Alternativní názvy, oddělené čárkou",
-                        controller: _aliasesController,
-                        hintText: "např. Stavebniny s.r.o., STAV Liberec",
-                      ),
-                      _buildFieldRow(
-                        icon: Icons.search_rounded,
-                        label: "KLÍČOVÁ SLOVA",
-                        desc: "Hledaná v importovaném souboru",
-                        controller: _keywordsController,
-                        hintText: "např. liberec, stavba-projekt, OBJ-2024",
-                      ),
-                      _buildFieldRow(
-                        icon: Icons.notes_rounded,
-                        label: "POZNÁMKY",
-                        desc: "Interní poznámka",
-                        controller: _notesController,
-                        hintText: "např. Hlavní odběratel, kontakt: Jan Novák",
-                        isLast: true,
-                      ),
+                      _buildFieldRow(icon: Icons.badge_outlined, label: 'IČO', desc: 'Identifikační číslo firmy', controller: _icoController, hintText: 'např. 12345678'),
+                      _buildFieldRow(icon: Icons.text_fields_rounded, label: 'ALIASY', desc: 'Alternativní názvy, oddělené čárkou', controller: _aliasesController, hintText: 'např. Stavebniny s.r.o., STAV Liberec'),
+                      _buildFieldRow(icon: Icons.search_rounded, label: 'KLÍČOVÁ SLOVA', desc: 'Hledaná v importovaném souboru', controller: _keywordsController, hintText: 'např. liberec, stavba-projekt, OBJ-2024'),
+                      _buildFieldRow(icon: Icons.notes_rounded, label: 'POZNÁMKY', desc: 'Interní poznámka', controller: _notesController, hintText: 'např. Hlavní odběratel, kontakt: Jan Novák', isLast: true),
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 8),
-                Text(
-                  "* Systém porovnává IČO, aliasy a klíčová slova s obsahem importovaného souboru.",
-                  style: TextStyle(
-                      color: Colors.white.withOpacity(0.15), fontSize: 11),
-                ),
-
                 const SizedBox(height: 28),
-
-                // ─── TABULKA 2: MAPOVÁNÍ SLOUPCŮ ───────────────────────
-                _tableLabel(Icons.tune_rounded, "MAPOVÁNÍ SLOUPCŮ"),
+                _tableLabel(Icons.tune_rounded, 'MAPOVÁNÍ SLOUPCŮ'),
                 const SizedBox(height: 8),
                 Container(
-                  decoration: BoxDecoration(
-                    color: _bgCard,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _borderColor),
-                  ),
+                  decoration: BoxDecoration(color: _bgCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: _borderColor)),
                   child: Column(
-                    children: _systemFields.asMap().entries.map((entry) {
-                      final isLast = entry.key == _systemFields.length - 1;
-                      return _buildMappingRow(entry.value, isLast);
-                    }).toList(),
+                    children: _systemFields.asMap().entries.map((entry) => _buildMappingRow(entry.value, entry.key == _systemFields.length - 1)).toList(),
                   ),
                 ),
-
-                const SizedBox(height: 8),
-                Text(
-                  "* Názvy sloupců v Excelu oddělené čárkou. Systém hledá shodu v tomto pořadí.",
-                  style: TextStyle(
-                      color: Colors.white.withOpacity(0.15), fontSize: 11),
-                ),
-
                 const SizedBox(height: 24),
-
-                // ─── FOOTER: Název + uložit ────────────────────────────
-                _buildEditorFooter(),
-
+                _buildEditorFooter(active),
                 const SizedBox(height: 24),
               ],
             ),
@@ -498,11 +456,6 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     );
   }
 
-  // =====================================================================
-  //  ŘÁDKY TABULEK
-  // =====================================================================
-
-  /// Řádek pro rozpoznávací vzory (s ikonou vlevo)
   Widget _buildFieldRow({
     required IconData icon,
     required String label,
@@ -513,11 +466,7 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        border: isLast
-            ? null
-            : const Border(bottom: BorderSide(color: _borderColor)),
-      ),
+      decoration: BoxDecoration(border: isLast ? null : const Border(bottom: BorderSide(color: _borderColor))),
       child: Row(
         children: [
           SizedBox(
@@ -527,36 +476,21 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
               children: [
                 Row(
                   children: [
-                    Icon(icon,
-                        size: 13, color: Colors.white.withOpacity(0.2)),
+                    Icon(icon, size: 13, color: Colors.white.withOpacity(0.2)),
                     const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    Text(label, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11, fontWeight: FontWeight.bold)),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Padding(
                   padding: const EdgeInsets.only(left: 21),
-                  child: Text(
-                    desc,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.2),
-                      fontSize: 9,
-                    ),
-                  ),
+                  child: Text(desc, style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 9)),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 12),
-          Icon(Icons.arrow_right_alt_rounded,
-              size: 16, color: Colors.white.withOpacity(0.08)),
+          Icon(Icons.arrow_right_alt_rounded, size: 16, color: Colors.white.withOpacity(0.08)),
           const SizedBox(width: 12),
           Expanded(child: _inputField(controller, hintText)),
         ],
@@ -564,17 +498,12 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
     );
   }
 
-  /// Řádek pro mapování sloupců (stejný styl jako ProfilesEditorTab)
   Widget _buildMappingRow(Map<String, String> field, bool isLast) {
     final key = field['key']!;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        border: isLast
-            ? null
-            : const Border(bottom: BorderSide(color: _borderColor)),
-      ),
+      decoration: BoxDecoration(border: isLast ? null : const Border(bottom: BorderSide(color: _borderColor))),
       child: Row(
         children: [
           SizedBox(
@@ -582,170 +511,158 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  field['label']!,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text(field['label']!, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 2),
-                Text(
-                  field['desc']!,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.2),
-                    fontSize: 9,
-                  ),
-                ),
+                Text(field['desc']!, style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 9)),
               ],
             ),
           ),
           const SizedBox(width: 12),
-          Icon(Icons.arrow_right_alt_rounded,
-              size: 16, color: Colors.white.withOpacity(0.08)),
+          Icon(Icons.arrow_right_alt_rounded, size: 16, color: Colors.white.withOpacity(0.08)),
           const SizedBox(width: 12),
-          Expanded(
-            child: _inputField(
-              _mappingControllers[key]!,
-              "např. $key, column_a...",
-            ),
-          ),
+          Expanded(child: _inputField(_mappingControllers[key]!, 'např. $key, column_a...')),
         ],
       ),
     );
   }
 
-  /// Sdílený styl vstupního pole
   Widget _inputField(TextEditingController controller, String hintText) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.black26,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withOpacity(0.04)),
-      ),
+      decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white.withOpacity(0.04))),
       child: TextField(
         controller: controller,
-        style: const TextStyle(
-          color: Colors.amberAccent,
-          fontFamily: 'monospace',
-          fontSize: 12,
-        ),
+        style: const TextStyle(color: Colors.amberAccent, fontFamily: 'monospace', fontSize: 12),
         decoration: InputDecoration(
           isDense: true,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
           hintText: hintText,
-          hintStyle: TextStyle(
-            color: Colors.white.withOpacity(0.08),
-            fontStyle: FontStyle.italic,
-            fontSize: 11,
-          ),
+          hintStyle: TextStyle(color: Colors.white.withOpacity(0.08), fontStyle: FontStyle.italic, fontSize: 11),
           border: InputBorder.none,
         ),
       ),
     );
   }
 
-  // =====================================================================
-  //  FOOTER
-  // =====================================================================
+  Widget _buildEditorFooter(CustomerProfile? active) {
+    // Optimalizace: Použijeme filtrovaný seznam, aby Dropdown neobsahoval 10 000 položek najednou.
+    // Pokud je vybraný zákazník, musí být v seznamu i když neodpovídá filtru.
+    final dropdownItems = _filteredCustomers.toList();
+    if (_linkedCustomerId != null && !dropdownItems.any((c) => c['id'] == _linkedCustomerId)) {
+      final selected = _customers.firstWhere((c) => c['id'] == _linkedCustomerId, orElse: () => {});
+      if (selected.isNotEmpty) dropdownItems.add(selected);
+    }
 
-  Widget _buildEditorFooter() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _bgCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
+      decoration: BoxDecoration(color: _bgCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: _borderColor)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                Icon(Icons.edit_note_rounded,
-                    size: 16, color: Colors.white.withOpacity(0.15)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _displayNameController,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                      hintText: "Název zákazníka",
-                      hintStyle:
-                          TextStyle(color: Colors.white24, fontSize: 13),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Material(
-            color: _accentColor,
-            borderRadius: BorderRadius.circular(6),
-            child: InkWell(
-              onTap: _saveCurrentCustomer,
-              borderRadius: BorderRadius.circular(6),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                child: Text(
-                  "ULOŽIT ZMĚNY",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
+          const Text("PROPOJENÍ SE ZÁKAZNÍKEM", style: TextStyle(color: Colors.white24, fontSize: 9, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.search, size: 16, color: Colors.white.withOpacity(0.15)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _customerSearchController,
+                  onChanged: _filterCustomers,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  decoration: const InputDecoration(
+                    hintText: "Hledat v seznamu zákazníků...",
+                    hintStyle: TextStyle(color: Colors.white10, fontSize: 12),
+                    border: InputBorder.none,
+                    isDense: true,
                   ),
                 ),
               ),
-            ),
+            ],
           ),
+          const Divider(color: _borderColor, height: 20),
+          Row(
+            children: [
+              Icon(Icons.person_pin_circle_outlined, size: 16, color: Colors.white.withOpacity(0.15)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: _linkedCustomerId,
+                  decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+                  dropdownColor: _bgCard,
+                  isExpanded: true,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  hint: const Text('Vyberte zákazníka ze seznamu *', style: TextStyle(color: Colors.white24)),
+                  items: dropdownItems
+                      .map(
+                        (c) => DropdownMenuItem<int>(
+                          value: c['id'] as int,
+                          child: Text(c['nazev']?.toString() ?? '', overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) => setState(() => _linkedCustomerId = value),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Icon(Icons.edit_note_rounded, size: 16, color: Colors.white.withOpacity(0.15)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _displayNameController,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    hintText: 'Název profilu *',
+                    hintStyle: TextStyle(color: Colors.white24, fontSize: 13),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Material(
+                color: _accentColor,
+                borderRadius: BorderRadius.circular(6),
+                child: InkWell(
+                  onTap: _saveCurrentCustomer,
+                  borderRadius: BorderRadius.circular(6),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    child: Text('ULOŽIT ZMĚNY', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (active != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('UID: ${active.profileUid}', style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 10)),
+              ),
+            ),
         ],
       ),
     );
   }
-
-  // =====================================================================
-  //  HELPERS
-  // =====================================================================
 
   Widget _tableLabel(IconData icon, String text) {
     return Row(
       children: [
         Icon(icon, size: 12, color: Colors.white.withOpacity(0.12)),
         const SizedBox(width: 8),
-        Text(
-          text,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.2),
-            fontSize: 9,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
-          ),
-        ),
+        Text(text, style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
       ],
     );
   }
 
   Widget _sectionHeader(String text) {
-    return Text(
-      text,
-      style: TextStyle(
-        color: Colors.white.withOpacity(0.2),
-        fontSize: 9,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.5,
-      ),
-    );
+    return Text(text, style: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.5));
   }
 
   Widget _buildEmptyState() {
@@ -753,30 +670,13 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.business_outlined,
-              size: 48, color: Colors.white.withOpacity(0.05)),
+          Icon(Icons.business_outlined, size: 48, color: Colors.white.withOpacity(0.05)),
           const SizedBox(height: 16),
-          Text(
-            "Žádní zákazníci",
-            style:
-                TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14),
-          ),
+          Text('Žádné profily', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 14)),
           const SizedBox(height: 8),
-          Text(
-            "Zákazníci se vytvoří automaticky analýzou souborů v Drop Zone,\nnebo je můžete přidat ručně.",
-            textAlign: TextAlign.center,
-            style:
-                TextStyle(color: Colors.white.withOpacity(0.15), fontSize: 12),
-          ),
+          Text('Vytvořte první zákaznický profil.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withOpacity(0.15), fontSize: 12)),
           const SizedBox(height: 16),
-          TextButton(
-            onPressed: _createNewCustomer,
-            child: const Text(
-              "PŘIDAT RUČNĚ",
-              style: TextStyle(
-                  color: _accentColor, fontWeight: FontWeight.bold),
-            ),
-          ),
+          TextButton(onPressed: _createNewCustomer, child: const Text('PŘIDAT RUČNĚ', style: TextStyle(color: _accentColor, fontWeight: FontWeight.bold))),
         ],
       ),
     );

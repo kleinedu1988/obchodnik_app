@@ -138,6 +138,8 @@ class WorkflowController extends ChangeNotifier {
   HeaderDetectionResult? headerResult;
   CustomerMatchResult? pendingCustomerResult;
   Map<String, dynamic>? assignedCustomer;
+  String? customerProfileUid;
+  Map<String, String>? customerProfileMappings;
 
   // --- DATA ---
   IngestionResult? lastIngestion;
@@ -275,22 +277,18 @@ class WorkflowController extends ChangeNotifier {
   void manualHeaderAdjust(int newIndex) {
     if (headerResult == null) return;
     
-    // OPRAVA: HeaderDetectionResult.previewRows už obsahuje Stringy (List<String>), nikoliv Excel objekty.
-    // Proto přistupujeme k proměnné přímo jako k textu a nevoláme .value.
     final newHeaders = headerResult!.previewRows[newIndex]
         .map((cellString) {
           return cellString.replaceAll('\n', ' ').trim();
         })
         .toList();
 
-    // Vytvoříme novou instanci výsledku s novým indexem hlavičky
-    // DŮLEŽITÉ: Musíme předat i knownSpans, aby UI vědělo o spojených buňkách i po změně řádku
     headerResult = HeaderDetectionResult(
       headerRowIndex: newIndex,
       cleanedHeaders: newHeaders,
       previewRows: headerResult!.previewRows,
-      knownSpans: headerResult!.knownSpans, // <--- PŘIDÁNO: Zachováme detekované spany
-      rowScores: headerResult!.rowScores,   // <--- PŘIDÁNO: Zachováme skóre pro barvení
+      knownSpans: headerResult!.knownSpans,
+      rowScores: headerResult!.rowScores,
     );
     notifyListeners();
   }
@@ -338,10 +336,77 @@ class WorkflowController extends ChangeNotifier {
   }
 
   /// Potvrzení zákazníka uživatelem (nebo null = přeskočit)
-  void confirmCustomer(Map<String, dynamic>? customer) {
+  Future<void> confirmCustomer(Map<String, dynamic>? customer) async {
     assignedCustomer = customer;
+    customerProfileUid = null;
+    customerProfileMappings = null;
+
+    if (customer != null) {
+      final profile = await _loadOrCreateCustomerProfile(customer);
+      customerProfileUid = profile['profile_uid']?.toString();
+      customerProfileMappings = _decodeMappings(profile['mappings']);
+    }
+
     isMatchingCustomer = false;
     isMappingPending = true;
+    notifyListeners();
+  }
+
+  Future<Map<String, dynamic>> _loadOrCreateCustomerProfile(Map<String, dynamic> customer) async {
+    final existing = await DbService().getCustomerProfile(
+      profileUid: customer['customer_profile_uid']?.toString(),
+      customerId: customer['id'],
+    );
+
+    if (existing != null) {
+      final uid = existing['profile_uid']?.toString();
+      if (uid != null && uid.isNotEmpty && customer['id'] != null) {
+        await DbService().updateCustomerProfileUid(customer['id'] as int, uid);
+      }
+      return existing;
+    }
+
+    final generatedUid = 'cp_${DateTime.now().microsecondsSinceEpoch}';
+    final defaults = Map<String, String>.from(MappingProfile.systemDefault.mappings);
+    final customerId = customer['id']?.toString() ?? '';
+
+    await DbService().saveCustomerProfileRaw(
+      uid: generatedUid,
+      customerId: customerId,
+      customerName: customer['nazev']?.toString() ?? 'Neznámý zákazník',
+      mappings: defaults,
+    );
+
+    if (customer['id'] != null) {
+      await DbService().updateCustomerProfileUid(customer['id'] as int, generatedUid);
+      customer['customer_profile_uid'] = generatedUid;
+    }
+
+    return {
+      'profile_uid': generatedUid,
+      'customer_id': customerId,
+      'display_name': customer['nazev']?.toString() ?? '',
+      'mappings': jsonEncode(defaults),
+    };
+  }
+
+  Map<String, String> _decodeMappings(dynamic raw) {
+    if (raw == null) return {};
+    if (raw is String) {
+      try {
+        return Map<String, String>.from(jsonDecode(raw));
+      } catch (_) {
+        return {};
+      }
+    }
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry(key.toString(), value.toString()));
+    }
+    return {};
+  }
+
+  void completeMappingReview() {
+    isMappingPending = false;
     notifyListeners();
   }
 
@@ -398,6 +463,8 @@ class WorkflowController extends ChangeNotifier {
     headerResult = null;
     pendingCustomerResult = null;
     assignedCustomer = null;
+    customerProfileUid = null;
+    customerProfileMappings = null;
 
     sidebarStates = {
       0: const SidebarItemState(isEnabled: true, isProcessing: true),

@@ -1,16 +1,20 @@
 import 'dart:convert';
+import 'dart:isolate';
+import 'dart:math';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
+import 'package:mrb_obchodnik/logic/customer_profile.dart';
 
 /// Core Database Service pro MRB CRM 2026.
-/// Zajišťuje bleskové vyhledávání díky indexům a stabilitu při importu velkých dat.
+/// Zajišťuje bleskové vyhledávání a optimalizovanou práci na pozadí (Isolates).
 class DbService {
   static Database? _db;
 
-  // VERZE 5: Přidána tabulka profily (mapovací profily importu)
-  static const int _dbVersion = 5;
+  // VERZE 6: Stabilní customer_profile_uid + customer_profiles mapování
+  static const int _dbVersion = 6;
+  static final Random _random = Random();
 
   // Singleton instance pro globální přístup
   static final DbService _instance = DbService._internal();
@@ -21,7 +25,6 @@ class DbService {
   Future<Database> get database async {
     if (_db != null) return _db!;
 
-    // Inicializace FFI pro Desktop (Windows/Linux/macOS)
     if (!kIsWeb) {
       sqfliteFfiInit();
     }
@@ -52,21 +55,19 @@ class DbService {
   //  DEFINICE SCHÉMATU
   // =============================================================
 
-  /// Schéma: zakaznici + operace + materialy(katalog) + profily(mapování)
   Future<void> _createSchema(Database db) async {
-    // 1. ZÁKAZNÍCI
     await db.execute('''
       CREATE TABLE zakaznici (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         externi_id TEXT,
         nazev TEXT,
         ic TEXT,
+        customer_profile_uid TEXT,
         folder_path TEXT,
         timestamp TEXT
       )
     ''');
 
-    // 2. OPERACE (bez ceny, jen technologický popis)
     await db.execute('''
       CREATE TABLE operace (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +77,6 @@ class DbService {
       )
     ''');
 
-    // 3. MATERIÁLY (Katalog s definicí tlouštěk)
     await db.execute('''
       CREATE TABLE materialy (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +86,6 @@ class DbService {
       )
     ''');
 
-    // 4. MAPOVACÍ PROFILY
     await db.execute('''
       CREATE TABLE profily (
         id TEXT PRIMARY KEY,
@@ -96,73 +95,87 @@ class DbService {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE customer_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        profile_uid TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        ico TEXT,
+        aliases TEXT,
+        keywords TEXT,
+        notes TEXT,
+        mappings TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY (customer_id) REFERENCES zakaznici (id) ON DELETE CASCADE
+      )
+    ''');
+
     await _ensureIndexes(db);
   }
 
-  /// Migrace databáze
   Future<void> _upgradeSchema(Database db, int oldVersion, int newVersion) async {
-    // V2: Indexy
-    if (oldVersion < 2) {
-      await _ensureIndexes(db);
-    }
-
-    // V3: Operace
+    if (oldVersion < 2) await _ensureIndexes(db);
+    
     if (oldVersion < 3) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS operace (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          kod TEXT UNIQUE,
-          nazev TEXT,
-          poznamka TEXT
-        )
-      ''');
+      await db.execute('CREATE TABLE IF NOT EXISTS operace (id INTEGER PRIMARY KEY AUTOINCREMENT, kod TEXT UNIQUE, nazev TEXT, poznamka TEXT)');
     }
 
-    // V4: Materiály
     if (oldVersion < 4) {
-      // Pro jistotu smažeme, pokud existovala (při vývoji)
       await db.execute('DROP TABLE IF EXISTS materialy');
-
-      await db.execute('''
-        CREATE TABLE materialy (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          nazev TEXT,
-          alias TEXT,
-          tloustky TEXT
-        )
-      ''');
+      await db.execute('CREATE TABLE materialy (id INTEGER PRIMARY KEY AUTOINCREMENT, nazev TEXT, alias TEXT, tloustky TEXT)');
     }
 
-    // V5: Mapovací profily
     if (oldVersion < 5) {
+      await db.execute('CREATE TABLE IF NOT EXISTS profily (id TEXT PRIMARY KEY, name TEXT, is_default INTEGER, mappings TEXT)');
+    }
+
+    if (oldVersion < 6) {
+      try {
+        await db.execute('ALTER TABLE zakaznici ADD COLUMN customer_profile_uid TEXT');
+      } catch (e) {
+        debugPrint("Poznámka: Sloupec customer_profile_uid pravděpodobně již existuje.");
+      }
+
       await db.execute('''
-        CREATE TABLE IF NOT EXISTS profily (
-          id TEXT PRIMARY KEY,
-          name TEXT,
-          is_default INTEGER,
-          mappings TEXT
+        CREATE TABLE IF NOT EXISTS customer_profiles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          profile_uid TEXT NOT NULL UNIQUE,
+          display_name TEXT NOT NULL,
+          ico TEXT,
+          aliases TEXT,
+          keywords TEXT,
+          notes TEXT,
+          mappings TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          FOREIGN KEY (customer_id) REFERENCES zakaznici (id) ON DELETE CASCADE
         )
       ''');
     }
+
+    await _ensureIndexes(db);
   }
 
-  /// Indexy zajišťují bleskové vyhledávání.
   Future<void> _ensureIndexes(Database db) async {
-    // Zákazníci
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_nazev ON zakaznici (nazev)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_ic ON zakaznici (ic)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_folder ON zakaznici (folder_path)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_extid ON zakaznici (externi_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_zakaznici_profile_uid ON zakaznici (customer_profile_uid)');
     
-    // Operace
     await db.execute('CREATE INDEX IF NOT EXISTS idx_operace_kod ON operace (kod)');
-    
-    // Materiály
     await db.execute('CREATE INDEX IF NOT EXISTS idx_materialy_nazev ON materialy (nazev)');
+
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customer_profiles_customer ON customer_profiles (customer_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customer_profiles_uid ON customer_profiles (profile_uid)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customer_profiles_name ON customer_profiles (display_name)');
   }
 
   // =============================================================
-  //  DIAGNOSTIKA (Pro DbStatusTab)
+  //  DIAGNOSTIKA
   // =============================================================
 
   Future<Map<String, dynamic>> getDatabaseInfo() async {
@@ -180,7 +193,7 @@ class DbService {
       orderBy: 'timestamp DESC, id DESC',
       limit: 1,
     );
-    return maps.isNotEmpty ? maps.first : null;
+    return maps.isNotEmpty ? Map<String, dynamic>.from(maps.first) : null;
   }
 
   Future<int> getRowCount() async {
@@ -189,7 +202,6 @@ class DbService {
       final result = await db.rawQuery('SELECT COUNT(DISTINCT externi_id) as cnt FROM zakaznici');
       return result.isNotEmpty ? int.parse(result.first['cnt'].toString()) : 0;
     } catch (e) {
-      debugPrint("DB Error [getRowCount]: $e");
       return 0;
     }
   }
@@ -197,11 +209,12 @@ class DbService {
   Future<void> clearDatabase() async {
     final db = await database;
     await db.delete('zakaznici');
-    debugPrint("Databáze zakaznici byla kompletně vyčištěna.");
+    await db.delete('customer_profiles');
+    debugPrint("Databáze vyčištěna.");
   }
 
   // =============================================================
-  //  VÝKONNÝ IMPORT ZÁKAZNÍKŮ
+  //  VÝKONNÝ IMPORT ZÁKAZNÍKŮ S VYUŽITÍM POZADÍ (Isolates)
   // =============================================================
 
   Future<void> importZakazniku(
@@ -211,15 +224,53 @@ class DbService {
     final db = await database;
     onProgress(0.01);
 
+    final existingProfiles = await _loadExistingProfileUidMap(db);
+    
+    // PŘESUN VÝPOČTU UID DO VLÁKNA NA POZADÍ (zabrání mrznutí při tisících řádků)
+    final processedData = await Isolate.run(() {
+      final random = Random();
+      final generatedInRun = <String>{};
+
+      String generateUid() {
+        final now = DateTime.now().microsecondsSinceEpoch;
+        final randomPart = random.nextInt(0xFFFFFF).toRadixString(16).padLeft(6, '0');
+        return 'cp_${now}_$randomPart';
+      }
+
+      for (final row in data) {
+        final extId = row['externi_id']?.toString().trim();
+        final ic = row['ic']?.toString().trim();
+
+        String? key;
+        if (extId != null && extId.isNotEmpty) key = 'ext:$extId';
+        else if (ic != null && ic.isNotEmpty) key = 'ic:$ic';
+
+        final existingUid = key != null ? existingProfiles[key] : null;
+        
+        String uid = existingUid ?? '';
+        if (uid.isEmpty) {
+          uid = generateUid();
+          while (generatedInRun.contains(uid)) {
+            uid = generateUid();
+          }
+        }
+
+        row['customer_profile_uid'] = uid;
+        generatedInRun.add(uid);
+      }
+      return data;
+    });
+
+    // SAMOTNÝ ZÁPIS DO DB
     await db.transaction((txn) async {
-      await txn.delete('zakaznici'); // POZOR: Toto smaže i přiřazené složky!
+      await txn.delete('zakaznici'); 
+      await txn.delete('customer_profiles');
 
       final batch = txn.batch();
-      final total = data.length;
+      final total = processedData.length;
 
       for (int i = 0; i < total; i++) {
-        batch.insert('zakaznici', data[i]);
-
+        batch.insert('zakaznici', processedData[i]);
         if (i % 300 == 0 && i != 0) {
           onProgress(i / total);
         }
@@ -227,14 +278,75 @@ class DbService {
 
       debugPrint("Spouštím batch commit pro $total záznamů...");
       await batch.commit(noResult: true);
-      debugPrint("Batch commit na disk dokončen.");
+      
+      await _rebuildCustomerProfiles(txn);
     });
 
     onProgress(1.0);
   }
 
+  Future<Map<String, String>> _loadExistingProfileUidMap(Database db) async {
+    final rows = await db.query(
+      'zakaznici',
+      columns: ['externi_id', 'ic', 'customer_profile_uid'],
+      where: 'customer_profile_uid IS NOT NULL AND customer_profile_uid != ""',
+    );
+
+    // Parsování probíhá na pozadí, jelikož mapování může být náročné
+    return await Isolate.run(() {
+      final result = <String, String>{};
+      for (final row in rows) {
+        final uid = row['customer_profile_uid']?.toString();
+        if (uid == null || uid.isEmpty) continue;
+
+        final extId = row['externi_id']?.toString().trim();
+        if (extId != null && extId.isNotEmpty) result['ext:$extId'] = uid;
+
+        final ic = row['ic']?.toString().trim();
+        if (ic != null && ic.isNotEmpty) result.putIfAbsent('ic:$ic', () => uid);
+      }
+      return result;
+    });
+  }
+
+  Future<void> _rebuildCustomerProfiles(Transaction txn) async {
+    final customers = await txn.query(
+      'zakaznici',
+      columns: ['id', 'externi_id', 'nazev', 'ic', 'customer_profile_uid'],
+      where: 'customer_profile_uid IS NOT NULL AND customer_profile_uid != ""',
+    );
+
+    final now = DateTime.now().toIso8601String();
+    final batch = txn.batch();
+
+    for (final customer in customers) {
+      final uid = customer['customer_profile_uid']?.toString();
+      final customerId = customer['id'];
+      if (uid == null || uid.isEmpty || customerId == null) continue;
+
+      batch.insert(
+        'customer_profiles',
+        {
+          'customer_id': customerId,
+          'profile_uid': uid,
+          'display_name': customer['nazev'] ?? 'Neznámý',
+          'ico': customer['ic'],
+          'aliases': jsonEncode([customer['nazev']]),
+          'keywords': jsonEncode([]),
+          'notes': '',
+          'mappings': null,
+          'created_at': now,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+
+    await batch.commit(noResult: true);
+  }
+
   // =============================================================
-  //  ZÁKAZNÍCI (Read & Update Path)
+  //  ZÁKAZNÍCI (Přesun parsování seznamů na pozadí)
   // =============================================================
 
   Future<List<Map<String, dynamic>>> getZakaznici({
@@ -260,7 +372,12 @@ class DbService {
     sql += ' ORDER BY nazev ASC LIMIT ? OFFSET ?';
     args.addAll([limit, offset]);
 
-    return db.rawQuery(sql, args);
+    final rawRows = await db.rawQuery(sql, args);
+
+    // DELEGACE: Vytvoření modifikovatelné List<Map> pro stovky/tisíce řádků proběhne na pozadí
+    return await Isolate.run(() {
+      return rawRows.map((e) => Map<String, dynamic>.from(e)).toList();
+    });
   }
 
   Future<void> updateFolderPath(int id, String newPath) async {
@@ -268,16 +385,28 @@ class DbService {
     final normalized = newPath.trim();
     final valueToStore = normalized.isEmpty ? null : normalized;
 
-    await db.update(
-      'zakaznici',
-      {'folder_path': valueToStore},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.update('zakaznici', {'folder_path': valueToStore}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> updateCustomerProfileUid(int id, String? profileUid) async {
+    final db = await database;
+    await db.update('zakaznici', {'customer_profile_uid': profileUid}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<Map<String, dynamic>?> getZakaznikById(dynamic id) async {
+    final db = await database;
+    final rows = await db.query('zakaznici', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isNotEmpty ? Map<String, dynamic>.from(rows.first) : null;
+  }
+
+  Future<Map<String, dynamic>?> getZakaznikByProfileUid(String profileUid) async {
+    final db = await database;
+    final rows = await db.query('zakaznici', where: 'customer_profile_uid = ?', whereArgs: [profileUid], limit: 1);
+    return rows.isNotEmpty ? Map<String, dynamic>.from(rows.first) : null;
   }
 
   // =============================================================
-  //  OPERACE (CRUD)
+  //  OPERACE
   // =============================================================
 
   Future<List<Map<String, dynamic>>> getOperace({String query = ''}) async {
@@ -289,24 +418,14 @@ class DbService {
       sql += ' AND (nazev LIKE ? OR kod LIKE ? OR poznamka LIKE ?)';
       args.addAll(['%$query%', '%$query%', '%$query%']);
     }
-
     sql += ' ORDER BY kod ASC';
-    return db.rawQuery(sql, args);
+    final rows = await db.rawQuery(sql, args);
+    return rows.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
-  Future<void> saveOperace({
-    int? id,
-    required String kod,
-    required String nazev,
-    String poznamka = '',
-  }) async {
+  Future<void> saveOperace({int? id, required String kod, required String nazev, String poznamka = ''}) async {
     final db = await database;
-    final data = <String, dynamic>{
-      'kod': kod.trim().toUpperCase(),
-      'nazev': nazev.trim(),
-      'poznamka': poznamka.trim(),
-    };
-
+    final data = {'kod': kod.trim().toUpperCase(), 'nazev': nazev.trim(), 'poznamka': poznamka.trim()};
     if (id == null) {
       await db.insert('operace', data, conflictAlgorithm: ConflictAlgorithm.replace);
     } else {
@@ -319,8 +438,14 @@ class DbService {
     await db.delete('operace', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<int> getOperaceCount() async {
+    final db = await database;
+    final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM operace');
+    return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
+  }
+
   // =============================================================
-  //  MATERIÁLY (CRUD)
+  //  MATERIÁLY
   // =============================================================
 
   Future<List<Map<String, dynamic>>> getMaterialy({String query = ''}) async {
@@ -332,24 +457,14 @@ class DbService {
       sql += ' AND (nazev LIKE ? OR alias LIKE ?)';
       args.addAll(['%$query%', '%$query%']);
     }
-
     sql += ' ORDER BY nazev ASC';
-    return db.rawQuery(sql, args);
+    final rows = await db.rawQuery(sql, args);
+    return rows.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
-  Future<void> saveMaterial({
-    int? id,
-    required String nazev,
-    String alias = '',
-    String tloustky = '',
-  }) async {
+  Future<void> saveMaterial({int? id, required String nazev, String alias = '', String tloustky = ''}) async {
     final db = await database;
-    final data = <String, dynamic>{
-      'nazev': nazev.trim().toUpperCase(),
-      'alias': alias.trim(),
-      'tloustky': tloustky.trim(),
-    };
-
+    final data = {'nazev': nazev.trim().toUpperCase(), 'alias': alias.trim(), 'tloustky': tloustky.trim()};
     if (id == null) {
       await db.insert('materialy', data);
     } else {
@@ -357,10 +472,9 @@ class DbService {
     }
   }
 
-  Future<int> getOperaceCount() async {
+  Future<void> deleteMaterial(int id) async {
     final db = await database;
-    final res = await db.rawQuery('SELECT COUNT(*) as cnt FROM operace');
-    return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
+    await db.delete('materialy', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<int> getMaterialyCount() async {
@@ -369,59 +483,123 @@ class DbService {
     return res.isNotEmpty ? (res.first['cnt'] as int) : 0;
   }
 
-  Future<void> deleteMaterial(int id) async {
-    final db = await database;
-    await db.delete('materialy', where: 'id = ?', whereArgs: [id]);
-  }
-
   // =============================================================
-  //  MAPOVACÍ PROFILY (CRUD) - NOVÉ
+  //  MAPOVACÍ PROFILY (Základní)
   // =============================================================
 
-  /// Načtení všech profilů z DB
   Future<List<Map<String, dynamic>>> getProfily() async {
     final db = await database;
-    // Výchozí se řadí první (is_default DESC), pak podle názvu
-    return db.query('profily', orderBy: 'is_default DESC, name ASC');
+    final rows = await db.query('profily', orderBy: 'is_default DESC, name ASC');
+    return rows.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
-  /// Uložení nebo aktualizace profilu
-  Future<void> saveProfil({
-    required String id,
-    required String name,
-    required bool isDefault,
+  Future<void> saveProfil({required String id, required String name, required bool isDefault, required Map<String, String> mappings}) async {
+    final db = await database;
+    if (isDefault) await db.update('profily', {'is_default': 0});
+    final data = {'id': id, 'name': name.trim(), 'is_default': isDefault ? 1 : 0, 'mappings': jsonEncode(mappings)};
+    await db.insert('profily', data, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteProfil(String id) async {
+    if (id == 'system_default_01') return;
+    final db = await database;
+    await db.delete('profily', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // =============================================================
+  //  ZÁKAZNICKÉ PROFILY (Optimalizováno přes Isolates)
+  // =============================================================
+
+  Future<List<CustomerProfile>> getCustomerProfiles() async {
+    final db = await database;
+    try {
+      final rawRows = await db.query('customer_profiles', orderBy: 'display_name COLLATE NOCASE ASC');
+      
+      // DELEGACE: Odloučení složitého dekódování JSON klíčových slov do pozadí
+      return await Isolate.run(() {
+        return rawRows.map((e) => CustomerProfile.fromDbMap(e)).toList();
+      });
+    } catch (e) {
+      debugPrint("DB Error [getCustomerProfiles]: $e");
+      return const [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getCustomerProfilesRaw({int limit = 500}) async {
+    final db = await database;
+    try {
+      final rows = await db.query('customer_profiles', limit: limit);
+      return await Isolate.run(() => rows.map((e) => Map<String, dynamic>.from(e)).toList());
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getCustomerProfile({String? profileUid, dynamic customerId}) async {
+    final db = await database;
+
+    if (profileUid != null && profileUid.isNotEmpty) {
+      final byUid = await db.query('customer_profiles', where: 'profile_uid = ?', whereArgs: [profileUid], limit: 1);
+      if (byUid.isNotEmpty) return Map<String, dynamic>.from(byUid.first);
+    }
+
+    if (customerId != null) {
+      final byCustomer = await db.query('customer_profiles', where: 'customer_id = ?', whereArgs: [customerId.toString()], orderBy: 'updated_at DESC', limit: 1);
+      if (byCustomer.isNotEmpty) return Map<String, dynamic>.from(byCustomer.first);
+    }
+
+    return null;
+  }
+
+  Future<void> saveCustomerProfileRaw({
+    required String uid,
+    required String customerId,
+    required String customerName,
     required Map<String, String> mappings,
   }) async {
     final db = await database;
-
-    // Pokud nastavujeme tento profil jako výchozí, zrušíme příznak u všech ostatních
-    if (isDefault) {
-      await db.update('profily', {'is_default': 0});
-    }
-
-    final data = {
-      'id': id,
-      'name': name.trim(),
-      'is_default': isDefault ? 1 : 0, // SQLite nemá boolean, používáme 1 a 0
-      'mappings': jsonEncode(mappings), // Převod mapování na JSON text
-    };
-
     await db.insert(
-      'profily', 
-      data, 
-      conflictAlgorithm: ConflictAlgorithm.replace // Nahradí, pokud už ID existuje (funguje jako update)
+      'customer_profiles',
+      {
+        'profile_uid': uid,
+        'customer_id': customerId,
+        'display_name': customerName,
+        'mappings': jsonEncode(mappings),
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
-  /// Smazání profilu (s ochranou systémového)
-  Future<void> deleteProfil(String id) async {
-    // POJISTKA: Systémový profil nesmí být na úrovni DB nikdy smazán!
-    if (id == 'system_default_01') {
-      debugPrint("Pokus o smazání systémového profilu byl zablokován na úrovni DB.");
-      return; 
+  Future<CustomerProfile> saveCustomerProfile(CustomerProfile profile) async {
+    final db = await database;
+    final data = profile.toDbMap()..remove('id');
+    data['updated_at'] = DateTime.now().toIso8601String();
+
+    if (profile.id == null) {
+      data['created_at'] = data['updated_at'];
+      final id = await db.insert('customer_profiles', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      return profile.copyWith(id: id);
     }
 
+    await db.update('customer_profiles', data, where: 'id = ?', whereArgs: [profile.id]);
+    return profile;
+  }
+
+  Future<bool> deleteCustomerProfile(String profileUid) async {
     final db = await database;
-    await db.delete('profily', where: 'id = ?', whereArgs: [id]);
+    final linked = await db.rawQuery('SELECT COUNT(*) as cnt FROM zakaznici WHERE customer_profile_uid = ?', [profileUid]);
+    final usedCount = int.tryParse(linked.first['cnt'].toString()) ?? 0;
+    
+    if (usedCount > 0) return false;
+
+    await db.delete('customer_profiles', where: 'profile_uid = ?', whereArgs: [profileUid]);
+    return true;
+  }
+
+  Future<List<Map<String, dynamic>>> getCustomerProfilesForCustomer(String customerId) async {
+    final db = await database;
+    final rows = await db.query('customer_profiles', where: 'customer_id = ?', whereArgs: [customerId], orderBy: 'updated_at DESC');
+    return rows.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 }
