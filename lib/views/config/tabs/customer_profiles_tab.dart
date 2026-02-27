@@ -677,7 +677,7 @@ class _CustomerProfilesTabState extends State<CustomerProfilesTab> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<int>(
-                  value: hasSelectedInItems ? _linkedCustomerId : null,
+                  initialValue: hasSelectedInItems ? _linkedCustomerId : null,
                   decoration: const InputDecoration(border: InputBorder.none, isDense: true),
                   dropdownColor: _bgCard,
                   isExpanded: true,

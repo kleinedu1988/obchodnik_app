@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 // Importy logiky a UI
-import 'package:mrb_obchodnik/logic/db_service.dart';
+import 'package:mrb_obchodnik/logic/db/repositories/operations_repository.dart';
 import 'package:mrb_obchodnik/logic/notifications.dart';
 
 class OperationsListTab extends StatefulWidget {
@@ -15,6 +15,7 @@ class OperationsListTab extends StatefulWidget {
 class _OperationsListTabState extends State<OperationsListTab> {
   // Data
   final List<Map<String, dynamic>> _seznamOperaci = [];
+  final OperationsRepository _operationsRepository = OperationsRepository();
 
   // Stav vyhledávání
   Timer? _debounce;
@@ -54,7 +55,7 @@ class _OperationsListTabState extends State<OperationsListTab> {
     setState(() => _isLoading = true);
 
     try {
-      final rawData = await DbService().getOperace(query: _query);
+      final rawData = await _operationsRepository.getOperace(query: _query);
 
       // Mutable copy
       final mutableData = rawData.map((e) => Map<String, dynamic>.from(e)).toList();
@@ -75,7 +76,7 @@ class _OperationsListTabState extends State<OperationsListTab> {
 
   Future<void> _smazatOperaci(int id) async {
     try {
-      await DbService().deleteOperace(id);
+      await _operationsRepository.deleteOperace(id);
       if (!mounted) return;
       Notifications.showSuccess(context, "OPERACE SMAZÁNA");
       _loadData();
@@ -329,7 +330,7 @@ class _OperationsListTabState extends State<OperationsListTab> {
               if (kod.isEmpty || nazev.isEmpty) return;
 
               try {
-                await DbService().saveOperace(
+                await _operationsRepository.saveOperace(
                   id: item?['id'] as int?,
                   kod: kod,
                   nazev: nazev,
@@ -410,7 +411,7 @@ class _OperationsListTabState extends State<OperationsListTab> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.precision_manufacturing_outlined, size: 48, color: Colors.white12),
+          const Icon(Icons.precision_manufacturing_outlined, size: 48, color: Colors.white12),
           const SizedBox(height: 16),
           Text(
             "Žádné výrobní operace",

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 // Importy logiky a UI
-import '../../../logic/db_service.dart';
+import 'package:mrb_obchodnik/logic/db/repositories/customers_repository.dart';
 import 'package:mrb_obchodnik/logic/notifications.dart';
 
 // NOVÉ: validátor složek (TECH / NABÍDKY)
@@ -17,6 +17,7 @@ class CustomerListTab extends StatefulWidget {
 
 class _CustomerListTabState extends State<CustomerListTab> {
   final List<Map<String, dynamic>> _seznamZakazniku = [];
+  final CustomersRepository _customersRepository = CustomersRepository();
   final ScrollController _scrollController = ScrollController();
 
   Timer? _debounce;
@@ -74,7 +75,7 @@ class _CustomerListTabState extends State<CustomerListTab> {
     if (loadMore) _offset += 50;
 
     try {
-      final rawData = await DbService().getZakaznici(
+      final rawData = await _customersRepository.getZakaznici(
         query: _query,
         offset: _offset,
         jenBezSlozky: _onlyMissing,
@@ -241,6 +242,7 @@ class _CustomerRow extends StatefulWidget {
 class _CustomerRowState extends State<_CustomerRow> {
   late TextEditingController _pathCtrl;
   final FocusNode _focusNode = FocusNode();
+  final CustomersRepository _customersRepository = CustomersRepository();
   bool _isHovering = false;
   Future<Map<String, bool>>? _folderFuture;
 
@@ -273,7 +275,7 @@ class _CustomerRowState extends State<_CustomerRow> {
   Future<void> _updatePath(String path) async {
     final cleanPath = path.trim();
     if (cleanPath == (widget.item['folder_path'] ?? '')) return;
-    await DbService().updateFolderPath(widget.item['id'], cleanPath);
+    await _customersRepository.updateFolderPath(widget.item['id'], cleanPath);
     if (mounted) {
       setState(() {
         widget.item['folder_path'] = cleanPath;

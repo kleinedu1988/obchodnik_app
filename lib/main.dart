@@ -5,6 +5,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:window_manager/window_manager.dart';
 
 // --- LOGIKA A STAV ---
+import 'package:mrb_obchodnik/logic/db/db_initializer.dart';
 import 'package:mrb_obchodnik/logic/workflow_controller.dart';
 
 // --- UI KOMPONENTY ---
@@ -22,7 +23,7 @@ void main() async {
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-    
+
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(
       size: Size(1360, 900),
@@ -30,7 +31,7 @@ void main() async {
       center: true,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
-      title: "MRB Data Bridge v0.5.0",
+      title: "MRB Data Bridge v0.5.6",
     );
     
     windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -76,6 +77,12 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
   final WorkflowController _workflow = WorkflowController();
+
+  @override
+  void initState() {
+    super.initState();
+    DbInitializer.initialize();
+  }
 
   // Handler pro změnu stránky ze Sidebaru
   void _onMenuSelected(int index, String title) {

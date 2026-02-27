@@ -24,11 +24,12 @@ class _DbStatusTabState extends State<DbStatusTab> {
   static const Color _bgCard = Color(0xFF16181D);
   static const Color _borderColor = Color(0xFF2A2D35);
 
-  // NOVÉ: barvy pro sekce operací / materiálů (jak jsi měl v návrhu)
+  // Barvy pro sekce operací / materiálů
   static const Color _opColor = Color(0xFFE056FD);
   static const Color _matColor = Color(0xFFFF9F1C);
 
   late Future<List<dynamic>> _dbData;
+  bool _isImporting = false; // NOVÉ: Sledování stavu importu
 
   @override
   void initState() {
@@ -36,17 +37,14 @@ class _DbStatusTabState extends State<DbStatusTab> {
     _nactiData();
   }
 
-  // =============================================================
-  //  NOVÉ: Future.wait doplněno o počty operací a materiálů
-  // =============================================================
   void _nactiData() {
     setState(() {
       _dbData = Future.wait([
         DbService().getLastEntry(),
         DbService().getRowCount(),
         SharedPreferences.getInstance(),
-        DbService().getOperaceCount(), // NOVÉ
-        DbService().getMaterialyCount(), // NOVÉ
+        DbService().getOperaceCount(),
+        DbService().getMaterialyCount(),
       ]);
     });
   }
@@ -72,13 +70,23 @@ class _DbStatusTabState extends State<DbStatusTab> {
           );
         }
 
+        // NOVÉ: Ošetření chyby při načítání dat
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Nepodařilo se načíst data: ${snapshot.error}',
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+            ),
+          );
+        }
+
         // 1) Získání dat
         final lastEntry = snapshot.data?[0] as Map<String, dynamic>?;
         final rowCount = (snapshot.data?[1] as int?) ?? 0;
         final prefs = snapshot.data?[2] as SharedPreferences;
 
-        final operaceCount = (snapshot.data?[3] as int?) ?? 0; // NOVÉ
-        final materialyCount = (snapshot.data?[4] as int?) ?? 0; // NOVÉ
+        final operaceCount = (snapshot.data?[3] as int?) ?? 0;
+        final materialyCount = (snapshot.data?[4] as int?) ?? 0;
 
         // 2) Interval
         final interval = prefs.getString('sync_interval') ?? '1 měsíc';
@@ -93,7 +101,7 @@ class _DbStatusTabState extends State<DbStatusTab> {
 
           switch (interval) {
             case 'teď':
-              isOutdated = diff.inSeconds > 10; // Pro testování
+              isOutdated = diff.inSeconds > 10;
               break;
             case '1 týden':
               isOutdated = diff.inDays > 7;
@@ -140,12 +148,8 @@ class _DbStatusTabState extends State<DbStatusTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. HLAVNÍ STATUS CARD
               _buildMainStatusCard(stavText, stavPodpis, stavIkona, stavBarva),
-
               const SizedBox(height: 32),
-
-              // 2. TECHNICKÁ SPECIFIKACE (UPRAVENO)
               _headerText("TECHNICKÁ SPECIFIKACE"),
               const SizedBox(height: 12),
               _buildInfoPanel([
@@ -157,10 +161,7 @@ class _DbStatusTabState extends State<DbStatusTab> {
                 _buildDataRow("Nastavený interval", interval),
                 _buildDataRow("Databázový engine", "SQLite 3.40 (FFI)", isLast: true),
               ]),
-
               const SizedBox(height: 32),
-
-              // 3. AKCE
               _headerText("SPRÁVA DAT"),
               const SizedBox(height: 12),
               _buildImportAction(context),
@@ -170,8 +171,6 @@ class _DbStatusTabState extends State<DbStatusTab> {
       },
     );
   }
-
-  // --- UI KOMPONENTY (Lokální, aby nechyběl SettingsHelpers) ---
 
   Widget _buildMainStatusCard(String text, String subtext, IconData icon, Color color) {
     return Container(
@@ -228,12 +227,7 @@ class _DbStatusTabState extends State<DbStatusTab> {
     );
   }
 
-  Widget _buildDataRow(
-    String label,
-    String value, {
-    bool isLast = false,
-    Color? color,
-  }) {
+  Widget _buildDataRow(String label, String value, {bool isLast = false, Color? color}) {
     final valueStyle = TextStyle(
       color: color ?? Colors.white,
       fontSize: 13,
@@ -291,16 +285,18 @@ class _DbStatusTabState extends State<DbStatusTab> {
             ),
           ),
           Material(
-            color: _accentColor,
+            // Změna barvy při importu
+            color: _isImporting ? Colors.white24 : _accentColor,
             borderRadius: BorderRadius.circular(6),
             child: InkWell(
-              onTap: () => _handleImport(context),
+              // Deaktivace kliku při importu
+              onTap: _isImporting ? null : () => _handleImport(context),
               borderRadius: BorderRadius.circular(6),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Text(
-                  "IMPORT EXCEL",
-                  style: TextStyle(
+                  _isImporting ? "IMPORTUJI..." : "IMPORT EXCEL",
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
@@ -327,20 +323,34 @@ class _DbStatusTabState extends State<DbStatusTab> {
     );
   }
 
-  // --- LOGIKA IMPORTU ---
+  // --- LOGIKA IMPORTU (AKTUALIZOVÁNO) ---
 
   Future<void> _handleImport(BuildContext context) async {
-    final result = await FilePicker.platform.pickFiles(
-      allowedExtensions: ['xlsx', 'xls'],
-      type: FileType.custom,
-      lockParentWindow: true,
-    );
+    if (_isImporting) return;
 
-    if (result != null && result.files.single.path != null) {
-      await ImportLogic.importCustomers(context, File(result.files.single.path!));
+    setState(() => _isImporting = true);
 
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowedExtensions: ['xlsx', 'xls'],
+        type: FileType.custom,
+        lockParentWindow: true,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        await ImportLogic.importCustomers(context, File(result.files.single.path!));
+
+        if (mounted) {
+          _nactiData();
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Import zrušen nebo nelze načíst cestu k souboru.')),
+        );
+      }
+    } finally {
       if (mounted) {
-        _nactiData();
+        setState(() => _isImporting = false);
       }
     }
   }

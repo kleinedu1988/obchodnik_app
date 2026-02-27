@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 
-import '../../../logic/db_service.dart';
+import 'package:mrb_obchodnik/logic/db/repositories/materials_repository.dart';
 import 'package:mrb_obchodnik/logic/notifications.dart';
 
 class MaterialsListTab extends StatefulWidget {
@@ -13,6 +13,7 @@ class MaterialsListTab extends StatefulWidget {
 
 class _MaterialsListTabState extends State<MaterialsListTab> {
   final List<Map<String, dynamic>> _seznamMaterialu = [];
+  final MaterialsRepository _materialsRepository = MaterialsRepository();
   
   Timer? _debounce;
   String _query = '';
@@ -50,7 +51,7 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
     if (mounted) setState(() => _isLoading = true);
     
     try {
-      final rawData = await DbService().getMaterialy(query: _query);
+      final rawData = await _materialsRepository.getMaterialy(query: _query);
       
       // Mutable copy
       final List<Map<String, dynamic>> mutableData = rawData
@@ -73,7 +74,7 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
   }
 
   Future<void> _smazatMaterial(int id) async {
-    await DbService().deleteMaterial(id);
+    await _materialsRepository.deleteMaterial(id);
     Notifications.showSuccess(context, "MATERIÁL ODSTRANĚN");
     _loadData();
   }
@@ -346,7 +347,7 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
             onPressed: () async {
               if (nazevCtrl.text.isEmpty) return;
               
-              await DbService().saveMaterial(
+              await _materialsRepository.saveMaterial(
                 id: item?['id'],
                 nazev: nazevCtrl.text,
                 alias: aliasCtrl.text,
@@ -357,9 +358,6 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
                 Navigator.pop(ctx);
                 _loadData();
                 Notifications.showSuccess(context, isNew ? "MATERIÁL VYTVOŘEN" : "ÚDAJE ULOŽENY");
-                
-                // Pokud je nový, můžeme rovnou nabídnout otevření tlouštěk? 
-                // Ne, necháme uživatele kliknout, je to čistší.
               }
             },
             style: ElevatedButton.styleFrom(
@@ -415,7 +413,7 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
 
             Future<void> saveAndClose() async {
               final newString = currentList.join(',');
-              await DbService().saveMaterial(
+              await _materialsRepository.saveMaterial(
                 id: item['id'],
                 nazev: item['nazev'],
                 alias: item['alias'],
@@ -514,8 +512,7 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(ctx), // Zrušit bez uložení změn v tomto dialogu?
-                  // Lepší je uložit jen při stisku Uložit.
+                  onPressed: () => Navigator.pop(ctx),
                   child: const Text("Zrušit", style: TextStyle(color: Colors.white30)),
                 ),
                 ElevatedButton(
@@ -572,8 +569,8 @@ class _MaterialsListTabState extends State<MaterialsListTab> {
           Text("Katalog materiálů je prázdný", style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 14)),
           const SizedBox(height: 16),
           TextButton(
-             onPressed: () => _showCreateDialog(),
-             child: const Text("VYTVOŘIT PRVNÍ", style: TextStyle(color: _matColor, fontWeight: FontWeight.bold)),
+              onPressed: () => _showCreateDialog(),
+              child: const Text("VYTVOŘIT PRVNÍ", style: TextStyle(color: _matColor, fontWeight: FontWeight.bold)),
           )
         ],
       ),

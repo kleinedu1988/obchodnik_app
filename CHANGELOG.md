@@ -7,6 +7,27 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.5.6] - 2026-02-27
+
+### Opraveno
+
+- **KRITICKÁ OPRAVA: Chybějící třída `CustomerProfilesRepository`**: Soubor `customer_profiles_repository.dart` obsahoval pouze duplicitní (a nekompatibilní) verzi modelu `CustomerProfile`, ale chyběla v něm samotná třída `CustomerProfilesRepository`. `DbService` ji instantioval a volal na ní 7 metod — kód se proto vůbec nekompiloval. Soubor byl přepsán kompletní implementací repozitáře se všemi metodami (`getCustomerProfiles`, `saveCustomerProfile`, `saveCustomerProfileRaw`, `deleteCustomerProfile`, atd.).
+
+- **KRITICKÁ OPRAVA: SQL chyba `no such column: ""`**: Import zákazníků selhal s výjimkou `SQLITE_ERROR: no such column: ""`. Příčina: SQLite používá pro řetězcové literály **jednoduché** uvozovky (`''`), nikoli dvojité (`""`). Dvojité uvozovky jsou v SQLite vyhrazeny pro identifikátory sloupců/tabulek. Opraveno v podmínce `WHERE customer_profile_uid != ''`.
+
+- **KRITICKÁ OPRAVA: `Illegal argument in isolate message` (Unsendable closure)**:
+  Import zákazníků selhal s chybou `OBJECT IS UNSENDABLE` při předávání dat do `Isolate.run()`. Kořenová příčina: **Dart zachytí v closure celý activation record obklopující funkce** — i proměnné, které closure explicitně nepoužívá. Closure `processData` definovaná uvnitř `importZakazniku` proto implicitně zachytila `onProgress` (callback držící referenci na Flutter widget strom přes `ValueNotifier<double>`), `db` a `this`. Flutter widgety přes izolátové hranice přenést nelze.
+
+  > ⚠️ **PRAVIDLO PRO BUDOUCÍ KÓD**: Closure předávaná do `Isolate.run()` **nesmí být definovaná uvnitř instance metody**. Vždy ji zabalte do `static` pomocné metody, která jako parametry přijme **pouze** data potřebná pro výpočet. Tím se zabrání nechtěnému zachycení nesendable objektů.
+
+  Opraveno extrakcí výpočetní logiky do `static` metod `_processImportData` a `_buildProfileMapFromRows`, a volání `Isolate.run` bylo přesunuto do dalších `static` metod `_runProcessImportData` a `_runBuildProfileMap` — ty nemají ve scope `onProgress`, `db` ani `this`.
+
+### Přidáno
+
+- **`DbInitializer`** (`lib/logic/db/db_initializer.dart`): Nová třída pro proaktivní inicializaci databáze při startu aplikace. Zkontroluje existenci `.db` souboru a zaloguje stav (`Nalezena existující` / `Vytvářím novou`). Spouštěna z `AppShell.initState()` — nikoliv z `main()`, aby nedocházelo k uváznutí (deadlock) způsobenému voláním platform channels před plným spuštěním Flutter engine.
+
+---
+
 ## [0.5.5] - 2026-02-26
 
 #### Přidáno
