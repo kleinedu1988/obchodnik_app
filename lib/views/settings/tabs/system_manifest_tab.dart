@@ -17,16 +17,16 @@ class ModuleManifest {
 }
 
 // =============================================================
-//  DATA: REGISTR VERZÍ (Aktualizováno pro v0.4.2)
+//  DATA: REGISTR VERZÍ (Aktualizováno pro v0.5.6)
 // =============================================================
 const List<ModuleManifest> systemModules = [
-  ModuleManifest(id: "CORE", name: "Jádro Aplikace (Shell)", version: "0.4.5", status: "Beta", completion: 0.48),
+  ModuleManifest(id: "CORE", name: "Jádro Aplikace (Shell)", version: "0.5.7", status: "Beta", completion: 0.55),
   ModuleManifest(id: "NAV", name: "Sidebar & Navigace", version: "0.8.0", status: "Stable", completion: 0.95),
-  ModuleManifest(id: "ING", name: "Ingestion Engine (Drop)", version: "0.3.0", status: "Alpha", completion: 0.40),
-  ModuleManifest(id: "DB", name: "Zákaznická Databáze", version: "0.4.0", status: "Stable", completion: 0.90),
+  ModuleManifest(id: "ING", name: "Ingestion Engine (Drop)", version: "0.5.7", status: "Beta", completion: 0.65),
+  ModuleManifest(id: "DB", name: "Zákaznická Databáze", version: "0.5.7", status: "Stable", completion: 0.95),
   ModuleManifest(id: "OPS", name: "Výrobní Operace", version: "1.0.0", status: "Stable", completion: 1.0),
-  ModuleManifest(id: "MAT", name: "Katalog Materiálů", version: "1.0.0", status: "Stable", completion: 1.0), // NOVÝ MODUL
-  ModuleManifest(id: "AI", name: "Inteligentní Mapování", version: "0.0.1", status: "Planning", completion: 0.05),
+  ModuleManifest(id: "MAT", name: "Katalog Materiálů", version: "1.0.0", status: "Stable", completion: 1.0),
+  ModuleManifest(id: "AI", name: "Inteligentní Mapování", version: "0.5.7", status: "Alpha", completion: 0.60),
   ModuleManifest(id: "OUT", name: "Export & Tisk", version: "0.0.0", status: "Pending", completion: 0.00),
 ];
 
@@ -58,7 +58,7 @@ class SystemManifestTab extends StatelessWidget {
               children: [
                 const Icon(Icons.info_outline, color: Colors.blueAccent, size: 20),
                 const SizedBox(width: 12),
-                const Text("Build: 2024.05.22-release  |  Environment: Production  |  SQLite: 3.40",
+                const Text("Build: 2026.03.01-release  |  Environment: Production  |  SQLite: 3.40",
                   style: TextStyle(color: Colors.blueAccent, fontFamily: 'monospace', fontSize: 12)),
                 const Spacer(),
                 Text("MRB BRIDGE APP", style: TextStyle(color: Colors.white.withOpacity(0.2), fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 2)),

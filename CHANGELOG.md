@@ -28,6 +28,16 @@ and this project adheres to Semantic Versioning.
 
 ---
 
+## [0.5.7] - 2026-03-01
+
+#### Opraveno
+- **Chybějící tabulka `profily` (DB v9)**: Při startu aplikace docházelo k pádu s chybou `no such table: profily`. Tabulka pro mapovací profily nebyla zahrnuta ve schématu databáze ani v migracích. Přidána do `_createSchema` i do `_upgradeSchema`.
+- **Chybějící sloupce `aliases` a `keywords` (DB v10)**: Tabulka `customer_profiles` neobsahovala sloupce `aliases` a `keywords`, přestože model `CustomerProfile` i tab správy profilů s nimi plně pracoval. Ukládání zákaznických profilů z UI proto vždy selhávalo. Sloupce přidány do schématu a migrace.
+- **Odpojení profilu zákazníka při reimportu**: Každý reimport zákazníků vygeneroval nový `customer_profile_uid` a přepsal stávající hodnotu v tabulce `zakaznici`, čímž bylo přetrháno napojení na nakonfigurovaný profil. Opraveno zachováním existujícího UID při aktualizaci záznamu.
+- **Read-only mapa ze SQLite (`UnsupportedError`)**: `WorkflowController.confirmCustomer()` se pokoušel zapsat `customer_profile_uid` přímo do mapy vrácené SQLite, která je neměnná. Opraveno vytvořením mutable kopie (`Map.from()`) při přiřazení do `assignedCustomer`.
+
+---
+
 ## [0.5.5] - 2026-02-26
 
 #### Přidáno

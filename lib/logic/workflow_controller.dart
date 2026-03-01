@@ -341,7 +341,8 @@ class WorkflowController extends ChangeNotifier {
 
   /// Potvrzení zákazníka uživatelem (nebo null = přeskočit)
   Future<void> confirmCustomer(Map<String, dynamic>? customer) async {
-    assignedCustomer = customer;
+    // SQLite vrací read-only mapy – uděláme mutable kopii, abychom mohli ukládat customer_profile_uid
+    assignedCustomer = customer != null ? Map<String, dynamic>.from(customer) : null;
     customerProfileUid = null;
     customerProfileMappings = null;
     resolvedMapping = null;
@@ -372,9 +373,9 @@ class WorkflowController extends ChangeNotifier {
       );
     }
 
-    if (customer != null && customerProfileUid != null && customer['id'] != null) {
-      await DbService().updateCustomerProfileUid(customer['id'] as int, customerProfileUid);
-      customer['customer_profile_uid'] = customerProfileUid;
+    if (assignedCustomer != null && customerProfileUid != null && assignedCustomer!['id'] != null) {
+      await DbService().updateCustomerProfileUid(assignedCustomer!['id'] as int, customerProfileUid);
+      assignedCustomer!['customer_profile_uid'] = customerProfileUid;
     }
 
     isMatchingCustomer = false;
